@@ -26,13 +26,23 @@ fn generate_points() -> Vec<Point> {
 fn render_svg(raw: &[Point], simplified: &[Point], smoothed: &[Point]) -> String {
     let raw_pts: String = raw
         .iter()
-        .map(|p| format!("<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"1.5\" fill=\"#aaa\"/>", p.x, p.y))
+        .map(|p| {
+            format!(
+                "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"1.5\" fill=\"#aaa\"/>",
+                p.x, p.y
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n    ");
 
     let simp_pts: String = simplified
         .iter()
-        .map(|p| format!("<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"#e33\"/>", p.x, p.y))
+        .map(|p| {
+            format!(
+                "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"#e33\"/>",
+                p.x, p.y
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n    ");
 
