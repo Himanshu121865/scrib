@@ -8,21 +8,43 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #1a1a1a; height: 100vh; overflow: hidden; font-family: monospace; }
   canvas { background: #fff; cursor: crosshair; display: block; position: fixed; top: 0; left: 0; }
-  #toolbar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 10; }
-  #toolbar button { padding: 6px 14px; border: none; border-radius: 4px; background: #333; color: #ddd; cursor: pointer; font-family: monospace; font-size: 13px; }
-  #toolbar button:hover { background: #555; color: #fff; }
+  #toolbar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; z-index: 10; background: rgba(0,0,0,0.55); padding: 6px 14px; border-radius: 8px; }
+  #toolbar button { padding: 5px 12px; border: none; border-radius: 4px; background: #444; color: #ddd; cursor: pointer; font-family: monospace; font-size: 12px; }
+  #toolbar button:hover { background: #666; color: #fff; }
+  .swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+  .swatch.active { border-color: #fff; }
+  .size-wrap { display: flex; align-items: center; gap: 6px; color: #bbb; font-size: 11px; }
+  .size-wrap input { width: 60px; accent-color: #888; cursor: pointer; }
+  .size-wrap span { min-width: 24px; text-align: center; }
+  #toolbar .active-btn { background: #c33; color: #fff; }
+  #toolbar .active-btn:hover { background: #d44; }
   #info { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: #555; font-size: 12px; z-index: 10; }
 </style>
 </head>
 <body>
-<div id="toolbar"><button id="clear">Clear</button></div>
+<div id="toolbar">
+  <button id="clear">Clear</button>
+  <span style="color:#555;font-size:11px">|</span>
+  <div class="swatch" data-color="#222" style="background:#222"></div>
+  <div class="swatch" data-color="#e33" style="background:#e33"></div>
+  <div class="swatch" data-color="#33e" style="background:#33e"></div>
+  <div class="swatch" data-color="#3a3" style="background:#3a3"></div>
+  <div class="swatch" data-color="#e83" style="background:#e83"></div>
+  <span style="color:#555;font-size:11px">|</span>
+  <div class="size-wrap">
+    <label>Size</label>
+    <input type="range" id="sizeSlider" min="1" max="12" step="0.5" value="2.5">
+    <span id="sizeLabel">2.5</span>
+  </div>
+  <span style="color:#555;font-size:11px">|</span>
+  <button id="eraser">Eraser</button>
+</div>
 <canvas id="canvas"></canvas>
 <div id="info">scrib — draw with mouse or touch</div>
 <script type="module">
 import init, { process_stroke } from './pkg/scrib.js';
 
 await init();
-console.log('scrib WASM loaded');
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -33,6 +55,34 @@ const SEGMENTS = 6;
 const strokes = [];
 let currentRaw = null;
 let drawing = false;
+let currentColor = '#222';
+let currentSize = 2.5;
+let eraserMode = false;
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function hitTest(px, py) {
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const s = strokes[i];
+    const threshold = Math.max(s.size / 2, 4);
+    if (s.type === 'dot') {
+      if (Math.hypot(px - s.x, py - s.y) <= threshold) return i;
+    } else {
+      for (let j = 2; j < s.data.length; j += 2) {
+        if (distToSegment(px, py, s.data[j - 2], s.data[j - 1], s.data[j], s.data[j + 1]) <= threshold) return i;
+      }
+    }
+  }
+  return -1;
+}
 
 function getPos(e) {
   const rect = canvas.getBoundingClientRect();
@@ -43,15 +93,18 @@ function getPos(e) {
   };
 }
 
-const LINE_W = 2.5;
-
-function dot(x, y) {
+function dot(x, y, color, size) {
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.arc(x, y, LINE_W / 2, 0, Math.PI * 2);
+  ctx.arc(x, y, size / 2, 0, Math.PI * 2);
   ctx.fill();
 }
 
-function path(data) {
+function path(data, color, size) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = size;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.beginPath();
   ctx.moveTo(data[0], data[1]);
   for (let i = 2; i < data.length; i += 2) {
@@ -63,26 +116,20 @@ function path(data) {
 function redraw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  ctx.strokeStyle = '#222';
-  ctx.fillStyle = '#222';
-  ctx.lineWidth = LINE_W;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
   for (const s of strokes) {
     if (s.type === 'dot') {
-      dot(s.x, s.y);
+      dot(s.x, s.y, s.color, s.size);
     } else {
-      path(s.data);
+      path(s.data, s.color, s.size);
     }
   }
 
   if (currentRaw && currentRaw.length >= 3) {
     if (currentRaw.length === 3) {
-      dot(currentRaw[0], currentRaw[1]);
+      dot(currentRaw[0], currentRaw[1], currentColor, currentSize);
     } else {
       const result = process_stroke(currentRaw, EPSILON, SEGMENTS);
-      path(result);
+      path(result, currentColor, currentSize);
     }
   }
 }
@@ -90,16 +137,24 @@ function redraw() {
 function finalizeStroke() {
   if (!currentRaw) return;
   if (currentRaw.length === 3) {
-    strokes.push({ type: 'dot', x: currentRaw[0], y: currentRaw[1] });
+    strokes.push({ type: 'dot', x: currentRaw[0], y: currentRaw[1], color: currentColor, size: currentSize });
   } else if (currentRaw.length > 3) {
     const result = process_stroke(currentRaw, EPSILON, SEGMENTS);
-    strokes.push({ type: 'path', data: result });
+    strokes.push({ type: 'path', data: result, color: currentColor, size: currentSize });
   }
   currentRaw = null;
 }
 
 function startStroke(e) {
   const pos = getPos(e);
+  if (eraserMode) {
+    const idx = hitTest(pos.x, pos.y);
+    if (idx >= 0) {
+      strokes.splice(idx, 1);
+      redraw();
+    }
+    return;
+  }
   drawing = true;
   currentRaw = [pos.x, pos.y, pos.p];
 }
@@ -118,6 +173,28 @@ function endStroke() {
   redraw();
 }
 
+document.querySelectorAll('.swatch').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    el.classList.add('active');
+    currentColor = el.dataset.color;
+  });
+});
+document.querySelector('.swatch').classList.add('active');
+
+const sizeSlider = document.getElementById('sizeSlider');
+const sizeLabel = document.getElementById('sizeLabel');
+sizeSlider.addEventListener('input', () => {
+  currentSize = parseFloat(sizeSlider.value);
+  sizeLabel.textContent = currentSize.toFixed(1);
+});
+
+document.getElementById('eraser').addEventListener('click', () => {
+  eraserMode = !eraserMode;
+  document.getElementById('eraser').classList.toggle('active-btn', eraserMode);
+  canvas.style.cursor = eraserMode ? 'pointer' : 'crosshair';
+});
+
 canvas.addEventListener('pointerdown', startStroke);
 canvas.addEventListener('pointermove', continueStroke);
 canvas.addEventListener('pointerup', endStroke);
@@ -133,8 +210,18 @@ canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   const t = e.touches[0];
   const rect = canvas.getBoundingClientRect();
+  const x = t.clientX - rect.left;
+  const y = t.clientY - rect.top;
+  if (eraserMode) {
+    const idx = hitTest(x, y);
+    if (idx >= 0) {
+      strokes.splice(idx, 1);
+      redraw();
+    }
+    return;
+  }
   drawing = true;
-  currentRaw = [t.clientX - rect.left, t.clientY - rect.top, 0.5];
+  currentRaw = [x, y, 0.5];
 }, { passive: false });
 
 canvas.addEventListener('touchmove', (e) => {
