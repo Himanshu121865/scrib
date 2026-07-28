@@ -81,8 +81,8 @@ function hitStroke(px, py) {
     if (s.type === 'dot') {
       if (Math.hypot(px - s.x, py - s.y) <= threshold) return i;
     } else {
-      for (let j = 2; j < s.data.length; j += 2) {
-        if (distToSegment(px, py, s.data[j - 2], s.data[j - 1], s.data[j], s.data[j + 1]) <= threshold) return i;
+      for (let j = 3; j < s.data.length; j += 3) {
+        if (distToSegment(px, py, s.data[j - 3], s.data[j - 2], s.data[j], s.data[j + 1]) <= threshold) return i;
       }
     }
   }
@@ -98,24 +98,44 @@ function getPos(e) {
   };
 }
 
-function dot(x, y, color, size) {
+function dot(x, y, color, size, pressure) {
   ctx.fillStyle = color;
+  const r = (size / 2) * (0.3 + 0.7 * pressure);
   ctx.beginPath();
-  ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 }
 
-function path(data, color, size) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = size;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(data[0], data[1]);
-  for (let i = 2; i < data.length; i += 2) {
-    ctx.lineTo(data[i], data[i + 1]);
+function pathVarying(data, color) {
+  ctx.fillStyle = color;
+
+  for (let i = 0; i < data.length - 3; i += 3) {
+    const x1 = data[i], y1 = data[i + 1], w1 = data[i + 2];
+    const x2 = data[i + 3], y2 = data[i + 4], w2 = data[i + 5];
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.5) continue;
+
+    const px = -dy / len, py = dx / len;
+    const hw1 = w1 / 2, hw2 = w2 / 2;
+
+    ctx.beginPath();
+    ctx.moveTo(x1 - px * hw1, y1 - py * hw1);
+    ctx.lineTo(x2 - px * hw2, y2 - py * hw2);
+    ctx.lineTo(x2 + px * hw2, y2 + py * hw2);
+    ctx.lineTo(x1 + px * hw1, y1 + py * hw1);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x1, y1, hw1, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.stroke();
+
+  const last = data.length - 3;
+  ctx.beginPath();
+  ctx.arc(data[last], data[last + 1], data[last + 2] / 2, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function redraw() {
@@ -125,19 +145,19 @@ function redraw() {
     const s = strokes[i];
     if (toErase.has(i)) ctx.globalAlpha = 0.25;
     if (s.type === 'dot') {
-      dot(s.x, s.y, s.color, s.size);
+      dot(s.x, s.y, s.color, s.size, s.pressure);
     } else {
-      path(s.data, s.color, s.size);
+      pathVarying(s.data, s.color);
     }
     ctx.globalAlpha = 1;
   }
 
   if (currentRaw && currentRaw.length >= 3) {
     if (currentRaw.length === 3) {
-      dot(currentRaw[0], currentRaw[1], currentColor, currentSize);
+      dot(currentRaw[0], currentRaw[1], currentColor, currentSize, currentRaw[2]);
     } else {
-      const result = process_stroke(currentRaw, EPSILON, SEGMENTS);
-      path(result, currentColor, currentSize);
+      const result = process_stroke(currentRaw, EPSILON, SEGMENTS, currentSize);
+      pathVarying(result, currentColor);
     }
   }
 }
@@ -145,9 +165,9 @@ function redraw() {
 function finalizeStroke() {
   if (!currentRaw) return;
   if (currentRaw.length === 3) {
-    strokes.push({ type: 'dot', x: currentRaw[0], y: currentRaw[1], color: currentColor, size: currentSize });
+    strokes.push({ type: 'dot', x: currentRaw[0], y: currentRaw[1], color: currentColor, size: currentSize, pressure: currentRaw[2] });
   } else if (currentRaw.length > 3) {
-    const result = process_stroke(currentRaw, EPSILON, SEGMENTS);
+    const result = process_stroke(currentRaw, EPSILON, SEGMENTS, currentSize);
     strokes.push({ type: 'path', data: result, color: currentColor, size: currentSize });
   }
   currentRaw = null;
