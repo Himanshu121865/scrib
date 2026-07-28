@@ -40,7 +40,7 @@
   <button id="eraser">Eraser</button>
 </div>
 <canvas id="canvas"></canvas>
-<div id="info">scrib — draw with mouse or touch</div>
+<div id="info">scrib — <b>D</b> draw  <b>E</b> erase  <b>Esc</b> stop erase  <b>Ctrl+Z</b> undo</div>
 <script type="module">
 import init, { process_stroke } from './pkg/scrib.js';
 
@@ -59,6 +59,10 @@ let currentColor = '#222';
 let currentSize = 2.5;
 let eraserMode = false;
 
+let erasing = false;
+let eraserPath = [];
+let toErase = new Set();
+
 function distToSegment(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -69,8 +73,9 @@ function distToSegment(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
-function hitTest(px, py) {
+function hitStroke(px, py) {
   for (let i = strokes.length - 1; i >= 0; i--) {
+    if (toErase.has(i)) continue;
     const s = strokes[i];
     const threshold = Math.max(s.size / 2, 4);
     if (s.type === 'dot') {
@@ -116,12 +121,15 @@ function path(data, color, size) {
 function redraw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  for (const s of strokes) {
+  for (let i = 0; i < strokes.length; i++) {
+    const s = strokes[i];
+    if (toErase.has(i)) ctx.globalAlpha = 0.25;
     if (s.type === 'dot') {
       dot(s.x, s.y, s.color, s.size);
     } else {
       path(s.data, s.color, s.size);
     }
+    ctx.globalAlpha = 1;
   }
 
   if (currentRaw && currentRaw.length >= 3) {
@@ -145,28 +153,55 @@ function finalizeStroke() {
   currentRaw = null;
 }
 
-function startStroke(e) {
-  const pos = getPos(e);
-  if (eraserMode) {
-    const idx = hitTest(pos.x, pos.y);
-    if (idx >= 0) {
-      strokes.splice(idx, 1);
-      redraw();
-    }
-    return;
-  }
-  drawing = true;
-  currentRaw = [pos.x, pos.y, pos.p];
-}
-
-function continueStroke(e) {
-  if (!drawing) return;
-  const pos = getPos(e);
-  currentRaw.push(pos.x, pos.y, pos.p);
+function cancelErase() {
+  erasing = false;
+  toErase = new Set();
+  eraserPath = [];
   redraw();
 }
 
-function endStroke() {
+function handleDown(x, y, pressure) {
+  if (eraserMode) {
+    erasing = true;
+    eraserPath = [x, y];
+    toErase = new Set();
+    return;
+  }
+  drawing = true;
+  currentRaw = [x, y, pressure];
+}
+
+function handleMove(x, y) {
+  if (eraserMode) {
+    if (!erasing) return;
+    eraserPath.push(x, y);
+    const idx = hitStroke(x, y);
+    if (idx >= 0) toErase.add(idx);
+    if (eraserPath.length >= 4) {
+      const mx = (eraserPath[eraserPath.length - 4] + x) / 2;
+      const my = (eraserPath[eraserPath.length - 3] + y) / 2;
+      const idx2 = hitStroke(mx, my);
+      if (idx2 >= 0) toErase.add(idx2);
+    }
+    redraw();
+    return;
+  }
+  if (!drawing) return;
+  currentRaw.push(x, y, 0.5);
+  redraw();
+}
+
+function handleUp() {
+  if (eraserMode) {
+    if (!erasing) return;
+    erasing = false;
+    const sorted = [...toErase].sort((a, b) => b - a);
+    for (const idx of sorted) strokes.splice(idx, 1);
+    toErase = new Set();
+    eraserPath = [];
+    redraw();
+    return;
+  }
   if (!drawing) return;
   drawing = false;
   finalizeStroke();
@@ -189,22 +224,51 @@ sizeSlider.addEventListener('input', () => {
   sizeLabel.textContent = currentSize.toFixed(1);
 });
 
-document.getElementById('eraser').addEventListener('click', () => {
-  eraserMode = !eraserMode;
+function setTool(tool) {
+  eraserMode = tool === 'eraser';
   document.getElementById('eraser').classList.toggle('active-btn', eraserMode);
   canvas.style.cursor = eraserMode ? 'pointer' : 'crosshair';
+}
+
+document.getElementById('eraser').addEventListener('click', () => setTool(eraserMode ? 'draw' : 'eraser'));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'e' || e.key === 'E') setTool('eraser');
+  if (e.key === 'd' || e.key === 'D') setTool('draw');
+  if (e.key === 'Escape' && eraserMode) setTool('draw');
+  if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+    if (strokes.length > 0) {
+      strokes.pop();
+      redraw();
+    }
+  }
 });
 
-canvas.addEventListener('pointerdown', startStroke);
-canvas.addEventListener('pointermove', continueStroke);
-canvas.addEventListener('pointerup', endStroke);
-canvas.addEventListener('pointercancel', endStroke);
-canvas.addEventListener('pointerleave', endStroke);
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (e.button === 2) { if (erasing) cancelErase(); if (eraserMode) setTool('draw'); return; }
+  const p = getPos(e);
+  handleDown(p.x, p.y, p.p);
+});
+canvas.addEventListener('pointermove', (e) => {
+  const p = getPos(e);
+  handleMove(p.x, p.y);
+});
+canvas.addEventListener('pointerup', handleUp);
+canvas.addEventListener('pointercancel', () => { if (erasing) cancelErase(); handleUp(); });
+canvas.addEventListener('pointerleave', () => { if (erasing) cancelErase(); });
 
-canvas.addEventListener('mousedown', startStroke);
-canvas.addEventListener('mousemove', continueStroke);
-canvas.addEventListener('mouseup', endStroke);
-canvas.addEventListener('mouseleave', endStroke);
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) { if (erasing) cancelErase(); if (eraserMode) setTool('draw'); return; }
+  const p = getPos(e);
+  handleDown(p.x, p.y, p.p);
+});
+canvas.addEventListener('mousemove', (e) => {
+  const p = getPos(e);
+  handleMove(p.x, p.y);
+});
+canvas.addEventListener('mouseup', handleUp);
+canvas.addEventListener('mouseleave', () => { if (erasing) cancelErase(); });
 
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
@@ -212,31 +276,26 @@ canvas.addEventListener('touchstart', (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = t.clientX - rect.left;
   const y = t.clientY - rect.top;
-  if (eraserMode) {
-    const idx = hitTest(x, y);
-    if (idx >= 0) {
-      strokes.splice(idx, 1);
-      redraw();
-    }
-    return;
-  }
-  drawing = true;
-  currentRaw = [x, y, 0.5];
+  handleDown(x, y, 0.5);
 }, { passive: false });
 
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
-  if (!drawing) return;
   const t = e.touches[0];
   const rect = canvas.getBoundingClientRect();
-  currentRaw.push(t.clientX - rect.left, t.clientY - rect.top, 0.5);
-  redraw();
+  handleMove(t.clientX - rect.left, t.clientY - rect.top);
 }, { passive: false });
 
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
-  endStroke();
+  handleUp();
 }, { passive: false });
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (erasing) cancelErase();
+  if (eraserMode) setTool('draw');
+});
 
 document.getElementById('clear').addEventListener('click', () => {
   strokes.length = 0;
