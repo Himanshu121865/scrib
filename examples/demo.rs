@@ -1,13 +1,13 @@
 use scrib::point::Point;
-use scrib::simplify;
-use scrib::smooth;
+use scrib::stroke;
 
 fn main() {
     let raw = generate_points();
-    let simplified = simplify::rdp(&raw, 0.5);
-    let smoothed = smooth::catmull_rom(&simplified, 8);
 
-    let svg = render_svg(&raw, &simplified, &smoothed);
+    let s = stroke::Stroke::new_with_points(raw.clone());
+    let output = s.process_with_widths(4.0);
+
+    let svg = render_svg(&raw, &output);
     println!("{svg}");
 }
 
@@ -23,7 +23,7 @@ fn generate_points() -> Vec<Point> {
     pts
 }
 
-fn render_svg(raw: &[Point], simplified: &[Point], smoothed: &[Point]) -> String {
+fn render_svg(raw: &[Point], output: &[[f64; 3]]) -> String {
     let raw_pts: String = raw
         .iter()
         .map(|p| {
@@ -35,29 +35,29 @@ fn render_svg(raw: &[Point], simplified: &[Point], smoothed: &[Point]) -> String
         .collect::<Vec<_>>()
         .join("\n    ");
 
-    let simp_pts: String = simplified
-        .iter()
-        .map(|p| {
-            format!(
-                "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"#e33\"/>",
-                p.x, p.y
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n    ");
-
-    let path_d: String = smoothed
+    let path_d: String = output
         .iter()
         .enumerate()
         .map(|(i, p)| {
             if i == 0 {
-                format!("M {:.1} {:.1}", p.x, p.y)
+                format!("M {:.1} {:.1}", p[0], p[1])
             } else {
-                format!("L {:.1} {:.1}", p.x, p.y)
+                format!("L {:.1} {:.1}", p[0], p[1])
             }
         })
         .collect::<Vec<_>>()
         .join(" ");
+
+    let width_pts: String = output
+        .iter()
+        .map(|p| {
+            format!(
+                "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"none\" stroke=\"#080\" stroke-width=\"0.5\"/>",
+                p[0], p[1], p[2] / 2.0
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n    ");
 
     format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 700 400\" width=\"700\" height=\"400\">\n\
@@ -66,9 +66,9 @@ fn render_svg(raw: &[Point], simplified: &[Point], smoothed: &[Point]) -> String
          <path d=\"{path_d}\"/>\n\
          </g>\n\
          {raw_pts}\n\
-         {simp_pts}\n\
+         {width_pts}\n\
          <text x=\"20\" y=\"30\" font-family=\"monospace\" font-size=\"13\" fill=\"#888\">\n\
-         gray dots = raw | red dots = simplified | black line = smoothed\n\
+         gray = raw | black = smoothed path | green circles = variable width\n\
          </text>\n\
          </svg>",
     )

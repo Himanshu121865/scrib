@@ -5,42 +5,143 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>scrib</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #1a1a1a; height: 100vh; overflow: hidden; font-family: monospace; }
-  canvas { background: #fff; cursor: crosshair; display: block; position: fixed; top: 0; left: 0; }
-  #toolbar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; z-index: 10; background: rgba(0,0,0,0.55); padding: 6px 14px; border-radius: 8px; }
-  #toolbar button { padding: 5px 12px; border: none; border-radius: 4px; background: #444; color: #ddd; cursor: pointer; font-family: monospace; font-size: 12px; }
-  #toolbar button:hover { background: #666; color: #fff; }
-  .swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
-  .swatch.active { border-color: #fff; }
-  .size-wrap { display: flex; align-items: center; gap: 6px; color: #bbb; font-size: 11px; }
-  .size-wrap input { width: 60px; accent-color: #888; cursor: pointer; }
-  .size-wrap span { min-width: 24px; text-align: center; }
-  #toolbar .active-btn { background: #c33; color: #fff; }
-  #toolbar .active-btn:hover { background: #d44; }
-  #info { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: #555; font-size: 12px; z-index: 10; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a1a; height: 100vh; overflow: hidden; font-family: monospace; }
+canvas { background: #fff; display: block; position: fixed; top: 44px; left: 48px; right: 0; bottom: 52px; }
+
+/* Left tool panel */
+#leftPanel {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 48px;
+  background: #232323; z-index: 20;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 8px 0; gap: 2px;
+}
+.tool-btn {
+  width: 36px; height: 36px; border: none; border-radius: 8px;
+  background: transparent; color: #888; cursor: pointer;
+  font-size: 18px; display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s;
+}
+.tool-btn:hover { background: #333; color: #ddd; }
+.tool-btn.active { background: #e86a20; color: #fff; }
+.tool-btn.active:hover { background: #f08030; }
+#leftPanel .sep { width: 24px; height: 1px; background: #333; margin: 6px 0; }
+
+/* Top bar */
+#topBar {
+  position: fixed; top: 0; left: 48px; right: 0; height: 44px;
+  background: #232323; z-index: 20;
+  display: flex; align-items: center; gap: 4px; padding: 0 10px;
+}
+#topBar button {
+  padding: 5px 9px; border: none; border-radius: 6px;
+  background: transparent; color: #aaa; cursor: pointer;
+  font-family: monospace; font-size: 13px; transition: background 0.1s;
+  white-space: nowrap;
+}
+#topBar button:hover { background: #333; color: #eee; }
+#topBar .sep { width: 1px; height: 20px; background: #333; margin: 0 4px; }
+#topBar .tog-on { color: #e86a20; }
+#topBar .tog-on:hover { background: #333; color: #f08030; }
+#topBar .zoom-label { color: #ccc; font-size: 12px; min-width: 34px; text-align: center; }
+#topBar .icon-btn { font-size: 16px; padding: 5px 8px; }
+
+/* Bottom bar */
+#bottomBar {
+  position: fixed; bottom: 0; left: 48px; right: 0; height: 52px;
+  background: #232323; z-index: 20;
+  display: flex; align-items: center; gap: 14px; padding: 0 16px;
+}
+.swatches { display: flex; align-items: center; gap: 6px; }
+.swatch { width: 24px; height: 24px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; transition: border-color 0.1s; flex-shrink: 0; }
+.swatch.active { border-color: #e86a20; }
+.size-wrap { display: flex; align-items: center; gap: 8px; color: #999; font-size: 12px; }
+.size-wrap input { width: 80px; accent-color: #e86a20; cursor: pointer; }
+.size-wrap span { min-width: 24px; text-align: center; color: #ccc; }
+#bottomInfo { color: #555; font-size: 11px; margin-left: auto; white-space: nowrap; }
+
+/* Shortcuts overlay */
+#shortcutsOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: none; align-items: center; justify-content: center; }
+#shortcutsOverlay.open { display: flex; }
+#shortcutsPanel { background: #232323; border-radius: 10px; padding: 24px 32px; max-width: 420px; width: 90%; color: #ccc; font-size: 13px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+#shortcutsPanel h2 { margin: 0 0 16px; font-size: 15px; color: #eee; }
+#shortcutsPanel .row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #333; }
+#shortcutsPanel .row:last-child { border-bottom: none; }
+#shortcutsPanel .keys { color: #e86a20; }
+#shortcutsPanel .keys kbd { background: #333; padding: 1px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; color: #ddd; margin: 0 2px; }
 </style>
 </head>
 <body>
-<div id="toolbar">
+
+<!-- Left tool panel -->
+<div id="leftPanel">
+  <button class="tool-btn active" id="tooldraw" title="Pen (D)">✎</button>
+  <button class="tool-btn" id="tooleraser" title="Eraser (E)">◇</button>
+  <div class="sep"></div>
+  <button class="tool-btn" id="toolrect" title="Rectangle (R)">□</button>
+  <button class="tool-btn" id="toolcircle" title="Circle (C)">○</button>
+  <button class="tool-btn" id="toolline" title="Line (L)">╱</button>
+  <button class="tool-btn" id="toolarrow" title="Arrow (A)">→</button>
+</div>
+
+<!-- Top bar -->
+<div id="topBar">
+  <button class="icon-btn" id="undoBtn" title="Undo (Ctrl+Z)">↩</button>
+  <button class="icon-btn" id="redoBtn" title="Redo (Ctrl+Shift+Z)">↪</button>
+  <div class="sep"></div>
   <button id="clear">Clear</button>
-  <span style="color:#555;font-size:11px">|</span>
-  <div class="swatch" data-color="#222" style="background:#222"></div>
-  <div class="swatch" data-color="#e33" style="background:#e33"></div>
-  <div class="swatch" data-color="#33e" style="background:#33e"></div>
-  <div class="swatch" data-color="#3a3" style="background:#3a3"></div>
-  <div class="swatch" data-color="#e83" style="background:#e83"></div>
-  <span style="color:#555;font-size:11px">|</span>
+  <div class="sep"></div>
+  <button id="gridToggle">⊞</button>
+  <button id="bgToggle" class="tog-on">☽</button>
+  <div class="sep"></div>
+  <button class="icon-btn" id="zoomOut" title="Zoom out">−</button>
+  <span class="zoom-label" id="zoomLabel">100%</span>
+  <button class="icon-btn" id="zoomIn" title="Zoom in">+</button>
+  <button id="zoomReset">Fit</button>
+  <div style="flex:1"></div>
+  <button id="shortcutsBtn" style="font-weight:bold;color:#e86a20">?</button>
+</div>
+
+<!-- Bottom bar -->
+<div id="bottomBar">
+  <div class="swatches">
+    <div class="swatch" data-color="#222" style="background:#222"></div>
+    <div class="swatch" data-color="#e33" style="background:#e33"></div>
+    <div class="swatch" data-color="#33e" style="background:#33e"></div>
+    <div class="swatch" data-color="#3a3" style="background:#3a3"></div>
+    <div class="swatch" data-color="#e83" style="background:#e83"></div>
+    <div class="swatch" data-color="#eee" style="background:#eee;border:1px solid #555"></div>
+  </div>
   <div class="size-wrap">
     <label>Size</label>
     <input type="range" id="sizeSlider" min="1" max="12" step="0.5" value="2.5">
     <span id="sizeLabel">2.5</span>
   </div>
-  <span style="color:#555;font-size:11px">|</span>
-  <button id="eraser">Eraser</button>
+  <span id="bottomInfo">scrib · scroll zoom · middle-drag pan</span>
 </div>
+
+<!-- Shortcuts overlay -->
+<div id="shortcutsOverlay">
+  <div id="shortcutsPanel">
+    <h2>Keyboard Shortcuts</h2>
+    <div class="row"><span>Pen tool</span><span class="keys"><kbd>D</kbd></span></div>
+    <div class="row"><span>Eraser</span><span class="keys"><kbd>E</kbd></span></div>
+    <div class="row"><span>Rectangle</span><span class="keys"><kbd>R</kbd></span></div>
+    <div class="row"><span>Circle</span><span class="keys"><kbd>C</kbd></span></div>
+    <div class="row"><span>Line</span><span class="keys"><kbd>L</kbd></span></div>
+    <div class="row"><span>Arrow</span><span class="keys"><kbd>A</kbd></span></div>
+    <div class="row"><span>Cancel tool</span><span class="keys"><kbd>Esc</kbd></span></div>
+    <div class="row"><span>Undo</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>Z</kbd></span></div>
+    <div class="row"><span>Redo</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd></span></div>
+    <div class="row"><span>Pan (hold + drag)</span><span class="keys"><kbd>Space</kbd> + drag</span></div>
+    <div class="row"><span>Zoom</span><span class="keys">Scroll wheel</span></div>
+    <div class="row"><span>Pan</span><span class="keys">Middle‑click + drag</span></div>
+  </div>
+</div>
+
+<!-- Canvas -->
 <canvas id="canvas"></canvas>
-<div id="info">scrib — <b>D</b> draw  <b>E</b> erase  <b>Esc</b> stop erase  <b>Ctrl+Z</b> undo</div>
+
 <script type="module">
 import init, { process_stroke } from './pkg/scrib.js';
 
@@ -53,11 +154,104 @@ const EPSILON = 0.5;
 const SEGMENTS = 6;
 
 const strokes = [];
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 100;
+
+function saveState() {
+  undoStack.push(JSON.parse(JSON.stringify(strokes)));
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack.length = 0;
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  if (drawing) { drawing = false; currentRaw = null; }
+  if (shaping) { shaping = false; shapeStart = null; }
+  if (erasing) cancelErase();
+  redoStack.push(JSON.parse(JSON.stringify(strokes)));
+  const saved = undoStack.pop();
+  strokes.length = 0;
+  for (const s of saved) strokes.push(s);
+  redraw();
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  if (drawing) { drawing = false; currentRaw = null; }
+  if (shaping) { shaping = false; shapeStart = null; }
+  if (erasing) cancelErase();
+  undoStack.push(JSON.parse(JSON.stringify(strokes)));
+  const saved = redoStack.pop();
+  strokes.length = 0;
+  for (const s of saved) strokes.push(s);
+  redraw();
+}
+
 let currentRaw = null;
 let drawing = false;
-let currentColor = '#222';
-let currentSize = 2.5;
-let eraserMode = false;
+let currentColor = '#eee';
+let currentSize;
+let currentTool = 'draw';
+
+// Shape state
+let shaping = false;
+let shapeStart = null;
+
+// Camera
+let camX = 0, camY = 0, camZoom = 1;
+
+function screenToCanvas(sx, sy) {
+  return { x: (sx - camX) / camZoom, y: (sy - camY) / camZoom };
+}
+
+function updateZoomDisplay() {
+  const el = document.getElementById('zoomLabel');
+  if (el) el.textContent = Math.round(camZoom * 100) + '%';
+}
+
+// Pan
+let panning = false, panBtn = -1;
+let panStartX = 0, panStartY = 0, panStartCamX = 0, panStartCamY = 0;
+
+// Multi-touch
+const touchPoints = new Map();
+let pinchStartDist = 0, pinchStartZoom = 1;
+let pinchCenterX = 0, pinchCenterY = 0;
+let pinchCamX = 0, pinchCamY = 0;
+
+// Space key
+let spaceDown = false;
+
+// Grid / background
+let showGrid = false;
+let bgColor = '#1a1a1a';
+
+function drawGrid() {
+  if (!showGrid) return;
+  const spacing = 30;
+  const col = bgColor === '#ffffff' ? '#e0e0e0' : '#333333';
+  const cLeft = -camX / camZoom;
+  const cTop = -camY / camZoom;
+  const cRight = cLeft + canvas.width / camZoom;
+  const cBottom = cTop + canvas.height / camZoom;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const startX = Math.floor(cLeft / spacing) * spacing;
+  for (let cx = startX; cx <= cRight; cx += spacing) {
+    const sx = cx * camZoom + camX;
+    ctx.moveTo(sx, 0);
+    ctx.lineTo(sx, canvas.height);
+  }
+  const startY = Math.floor(cTop / spacing) * spacing;
+  for (let cy = startY; cy <= cBottom; cy += spacing) {
+    const sy = cy * camZoom + camY;
+    ctx.moveTo(0, sy);
+    ctx.lineTo(canvas.width, sy);
+  }
+  ctx.stroke();
+}
 
 let erasing = false;
 let eraserPath = [];
@@ -77,13 +271,24 @@ function hitStroke(px, py) {
   for (let i = strokes.length - 1; i >= 0; i--) {
     if (toErase.has(i)) continue;
     const s = strokes[i];
-    const threshold = Math.max(s.size / 2, 4);
+    const t = Math.max(s.size / 2, 4);
     if (s.type === 'dot') {
-      if (Math.hypot(px - s.x, py - s.y) <= threshold) return i;
-    } else {
+      if (Math.hypot(px - s.x, py - s.y) <= t) return i;
+    } else if (s.type === 'path') {
       for (let j = 3; j < s.data.length; j += 3) {
-        if (distToSegment(px, py, s.data[j - 3], s.data[j - 2], s.data[j], s.data[j + 1]) <= threshold) return i;
+        if (distToSegment(px, py, s.data[j - 3], s.data[j - 2], s.data[j], s.data[j + 1]) <= t) return i;
       }
+    } else if (s.type === 'rect') {
+      const l = Math.min(s.x1, s.x2), r = Math.max(s.x1, s.x2);
+      const u = Math.min(s.y1, s.y2), d = Math.max(s.y1, s.y2);
+      const cx = Math.max(l, Math.min(r, px)), cy = Math.max(u, Math.min(d, py));
+      if (Math.hypot(px - cx, py - cy) <= t) return i;
+    } else if (s.type === 'circle') {
+      const cx = (s.x1 + s.x2) / 2, cy = (s.y1 + s.y2) / 2;
+      const r = Math.hypot(s.x2 - s.x1, s.y2 - s.y1) / 2;
+      if (Math.abs(Math.hypot(px - cx, py - cy) - r) <= t) return i;
+    } else if (s.type === 'line' || s.type === 'arrow') {
+      if (distToSegment(px, py, s.x1, s.y1, s.x2, s.y2) <= t) return i;
     }
   }
   return -1;
@@ -91,11 +296,8 @@ function hitStroke(px, py) {
 
 function getPos(e) {
   const rect = canvas.getBoundingClientRect();
-  return {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top,
-    p: e.pressure || 0.5,
-  };
+  const c = screenToCanvas(e.clientX - rect.left, e.clientY - rect.top);
+  return { x: c.x, y: c.y, p: e.pressure || 0.5 };
 }
 
 function dot(x, y, color, size, pressure) {
@@ -138,21 +340,65 @@ function pathVarying(data, color) {
   ctx.fill();
 }
 
+function drawShape(s) {
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = s.size;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (s.type === 'rect') {
+    ctx.rect(Math.min(s.x1, s.x2), Math.min(s.y1, s.y2), Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1));
+    ctx.stroke();
+  } else if (s.type === 'circle') {
+    const cx = (s.x1 + s.x2) / 2, cy = (s.y1 + s.y2) / 2;
+    const r = Math.hypot(s.x2 - s.x1, s.y2 - s.y1) / 2;
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (s.type === 'line') {
+    ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2);
+    ctx.stroke();
+  } else if (s.type === 'arrow') {
+    const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+    const angle = Math.atan2(dy, dx);
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
+    ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2);
+    ctx.stroke();
+    const hl = s.size * 3, ha = Math.PI / 6;
+    ctx.beginPath();
+    ctx.moveTo(s.x2, s.y2);
+    ctx.lineTo(s.x2 - hl * Math.cos(angle - ha), s.y2 - hl * Math.sin(angle - ha));
+    ctx.moveTo(s.x2, s.y2);
+    ctx.lineTo(s.x2 - hl * Math.cos(angle + ha), s.y2 - hl * Math.sin(angle + ha));
+    ctx.stroke();
+  }
+}
+
 function redraw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawGrid();
+  ctx.setTransform(camZoom, 0, 0, camZoom, camX, camY);
 
   for (let i = 0; i < strokes.length; i++) {
     const s = strokes[i];
     if (toErase.has(i)) ctx.globalAlpha = 0.25;
     if (s.type === 'dot') {
       dot(s.x, s.y, s.color, s.size, s.pressure);
-    } else {
+    } else if (s.type === 'path') {
       pathVarying(s.data, s.color);
+    } else {
+      drawShape(s);
     }
     ctx.globalAlpha = 1;
   }
 
-  if (currentRaw && currentRaw.length >= 3) {
+  if (shaping && shapeStart) {
+    drawShape({ type: currentTool, x1: shapeStart.x, y1: shapeStart.y, x2: shapeStart.x2, y2: shapeStart.y2, color: currentColor, size: currentSize });
+  }
+
+  if (currentTool === 'draw' && currentRaw && currentRaw.length >= 3) {
     if (currentRaw.length === 3) {
       dot(currentRaw[0], currentRaw[1], currentColor, currentSize, currentRaw[2]);
     } else {
@@ -160,10 +406,13 @@ function redraw() {
       pathVarying(result, currentColor);
     }
   }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 function finalizeStroke() {
   if (!currentRaw) return;
+  saveState();
   if (currentRaw.length === 3) {
     strokes.push({ type: 'dot', x: currentRaw[0], y: currentRaw[1], color: currentColor, size: currentSize, pressure: currentRaw[2] });
   } else if (currentRaw.length > 3) {
@@ -181,18 +430,24 @@ function cancelErase() {
 }
 
 function handleDown(x, y, pressure) {
-  if (eraserMode) {
+  if (currentTool === 'eraser') {
     erasing = true;
     eraserPath = [x, y];
     toErase = new Set();
     return;
   }
-  drawing = true;
-  currentRaw = [x, y, pressure];
+  if (currentTool === 'draw') {
+    drawing = true;
+    currentRaw = [x, y, pressure];
+    return;
+  }
+  // Shape tool
+  shaping = true;
+  shapeStart = { x, y, x2: x, y2: y };
 }
 
 function handleMove(x, y) {
-  if (eraserMode) {
+  if (currentTool === 'eraser') {
     if (!erasing) return;
     eraserPath.push(x, y);
     const idx = hitStroke(x, y);
@@ -206,15 +461,24 @@ function handleMove(x, y) {
     redraw();
     return;
   }
-  if (!drawing) return;
-  currentRaw.push(x, y, 0.5);
+  if (currentTool === 'draw') {
+    if (!drawing) return;
+    currentRaw.push(x, y, 0.5);
+    redraw();
+    return;
+  }
+  // Shape tool
+  if (!shaping) return;
+  shapeStart.x2 = x;
+  shapeStart.y2 = y;
   redraw();
 }
 
 function handleUp() {
-  if (eraserMode) {
+  if (currentTool === 'eraser') {
     if (!erasing) return;
     erasing = false;
+    saveState();
     const sorted = [...toErase].sort((a, b) => b - a);
     for (const idx of sorted) strokes.splice(idx, 1);
     toErase = new Set();
@@ -222,9 +486,26 @@ function handleUp() {
     redraw();
     return;
   }
-  if (!drawing) return;
-  drawing = false;
-  finalizeStroke();
+  if (currentTool === 'draw') {
+    if (!drawing) return;
+    drawing = false;
+    finalizeStroke();
+    redraw();
+    return;
+  }
+  // Shape tool
+  if (!shaping) return;
+  shaping = false;
+  if (Math.abs(shapeStart.x2 - shapeStart.x) > 2 || Math.abs(shapeStart.y2 - shapeStart.y) > 2) {
+    saveState();
+    strokes.push({
+      type: currentTool,
+      x1: shapeStart.x, y1: shapeStart.y,
+      x2: shapeStart.x2, y2: shapeStart.y2,
+      color: currentColor, size: currentSize,
+    });
+  }
+  shapeStart = null;
   redraw();
 }
 
@@ -235,98 +516,241 @@ document.querySelectorAll('.swatch').forEach(el => {
     currentColor = el.dataset.color;
   });
 });
-document.querySelector('.swatch').classList.add('active');
+document.querySelector('.swatch[data-color="#eee"]').classList.add('active');
 
 const sizeSlider = document.getElementById('sizeSlider');
 const sizeLabel = document.getElementById('sizeLabel');
-sizeSlider.addEventListener('input', () => {
+function updateSize() {
   currentSize = parseFloat(sizeSlider.value);
   sizeLabel.textContent = currentSize.toFixed(1);
-});
+}
+sizeSlider.addEventListener('input', updateSize);
+updateSize();
+
+const toolIds = ['draw', 'eraser', 'rect', 'circle', 'line', 'arrow'];
 
 function setTool(tool) {
-  eraserMode = tool === 'eraser';
-  document.getElementById('eraser').classList.toggle('active-btn', eraserMode);
-  canvas.style.cursor = eraserMode ? 'pointer' : 'crosshair';
+  if (shaping) { shaping = false; shapeStart = null; redraw(); }
+  if (drawing) { drawing = false; currentRaw = null; }
+  if (erasing) cancelErase();
+  currentTool = tool;
+  for (const id of toolIds) {
+    const el = document.getElementById('tool' + id);
+    if (el) el.classList.toggle('active', id === tool);
+  }
+  canvas.style.cursor = tool === 'eraser' ? 'pointer' : 'crosshair';
 }
 
-document.getElementById('eraser').addEventListener('click', () => setTool(eraserMode ? 'draw' : 'eraser'));
+document.getElementById('tooldraw').addEventListener('click', () => setTool('draw'));
+document.getElementById('tooleraser').addEventListener('click', () => setTool('eraser'));
+document.getElementById('toolrect').addEventListener('click', () => setTool('rect'));
+document.getElementById('toolcircle').addEventListener('click', () => setTool('circle'));
+document.getElementById('toolline').addEventListener('click', () => setTool('line'));
+document.getElementById('toolarrow').addEventListener('click', () => setTool('arrow'));
 
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'e' || e.key === 'E') setTool('eraser');
-  if (e.key === 'd' || e.key === 'D') setTool('draw');
-  if (e.key === 'Escape' && eraserMode) setTool('draw');
-  if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
-    if (strokes.length > 0) {
-      strokes.pop();
-      redraw();
-    }
-  }
+document.getElementById('zoomIn').addEventListener('click', () => {
+  const step = Math.round(camZoom / 0.25);
+  const newZoom = Math.max(0.25, Math.min(10, (step + 1) * 0.25));
+  const cx = (canvas.width / 2 - camX) / camZoom;
+  const cy = (canvas.height / 2 - camY) / camZoom;
+  camX = canvas.width / 2 - cx * newZoom;
+  camY = canvas.height / 2 - cy * newZoom;
+  camZoom = newZoom;
+  updateZoomDisplay();
+  redraw();
+});
+document.getElementById('zoomOut').addEventListener('click', () => {
+  const step = Math.round(camZoom / 0.25);
+  const newZoom = Math.max(0.25, Math.min(10, (step - 1) * 0.25));
+  const cx = (canvas.width / 2 - camX) / camZoom;
+  const cy = (canvas.height / 2 - camY) / camZoom;
+  camX = canvas.width / 2 - cx * newZoom;
+  camY = canvas.height / 2 - cy * newZoom;
+  camZoom = newZoom;
+  updateZoomDisplay();
+  redraw();
+});
+document.getElementById('zoomReset').addEventListener('click', () => {
+  camX = 0; camY = 0; camZoom = 1;
+  updateZoomDisplay();
+  redraw();
 });
 
-canvas.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  if (e.button === 2) { if (erasing) cancelErase(); if (eraserMode) setTool('draw'); return; }
-  const p = getPos(e);
-  handleDown(p.x, p.y, p.p);
+document.getElementById('gridToggle').addEventListener('click', () => {
+  showGrid = !showGrid;
+  document.getElementById('gridToggle').classList.toggle('tog-on', showGrid);
+  redraw();
 });
-canvas.addEventListener('pointermove', (e) => {
-  const p = getPos(e);
-  handleMove(p.x, p.y);
+
+document.getElementById('bgToggle').addEventListener('click', () => {
+  const isDark = bgColor !== '#1a1a1a';
+  bgColor = isDark ? '#1a1a1a' : '#ffffff';
+  document.getElementById('bgToggle').classList.toggle('tog-on', isDark);
+  const newColor = isDark ? '#eee' : '#222';
+  currentColor = newColor;
+  document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+  document.querySelector(`.swatch[data-color="${newColor}"]`).classList.add('active');
+  redraw();
 });
-canvas.addEventListener('pointerup', handleUp);
-canvas.addEventListener('pointercancel', () => { if (erasing) cancelErase(); handleUp(); });
-canvas.addEventListener('pointerleave', () => { if (erasing) cancelErase(); });
 
-canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 2) { if (erasing) cancelErase(); if (eraserMode) setTool('draw'); return; }
-  const p = getPos(e);
-  handleDown(p.x, p.y, p.p);
-});
-canvas.addEventListener('mousemove', (e) => {
-  const p = getPos(e);
-  handleMove(p.x, p.y);
-});
-canvas.addEventListener('mouseup', handleUp);
-canvas.addEventListener('mouseleave', () => { if (erasing) cancelErase(); });
+document.getElementById('undoBtn').addEventListener('click', undo);
+document.getElementById('redoBtn').addEventListener('click', redo);
 
-canvas.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  const t = e.touches[0];
-  const rect = canvas.getBoundingClientRect();
-  const x = t.clientX - rect.left;
-  const y = t.clientY - rect.top;
-  handleDown(x, y, 0.5);
-}, { passive: false });
-
-canvas.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  const t = e.touches[0];
-  const rect = canvas.getBoundingClientRect();
-  handleMove(t.clientX - rect.left, t.clientY - rect.top);
-}, { passive: false });
-
-canvas.addEventListener('touchend', (e) => {
-  e.preventDefault();
-  handleUp();
-}, { passive: false });
-
-canvas.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  if (erasing) cancelErase();
-  if (eraserMode) setTool('draw');
-});
+const overlay = document.getElementById('shortcutsOverlay');
+document.getElementById('shortcutsBtn').addEventListener('click', () => overlay.classList.toggle('open'));
+overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
 
 document.getElementById('clear').addEventListener('click', () => {
+  saveState();
   strokes.length = 0;
   currentRaw = null;
   drawing = false;
   redraw();
 });
 
+document.addEventListener('keydown', (e) => {
+  if (e.key === ' ') { e.preventDefault(); spaceDown = true; }
+  if (e.key === 'e' || e.key === 'E') setTool('eraser');
+  if (e.key === 'd' || e.key === 'D') setTool('draw');
+  if (e.key === 'r' || e.key === 'R') setTool('rect');
+  if (e.key === 'c' || e.key === 'C') setTool('circle');
+  if (e.key === 'l' || e.key === 'L') setTool('line');
+  if (e.key === 'a' || e.key === 'A') setTool('arrow');
+  if (e.key === 'Escape') { if (overlay.classList.contains('open')) { overlay.classList.remove('open'); return; } if (currentTool === 'eraser') setTool('draw'); }
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey) { overlay.classList.toggle('open'); }
+  if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey) { redo(); }
+  else if (e.key === 'y' && (e.ctrlKey || e.metaKey)) { redo(); }
+  else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) { undo(); }
+});
+document.addEventListener('keyup', (e) => {
+  if (e.key === ' ') spaceDown = false;
+});
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+
+  // Touch: track multi-touch
+  if (e.pointerType === 'touch') {
+    touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touchPoints.size === 2) {
+      if (erasing) cancelErase();
+      drawing = false;
+      currentRaw = null;
+      const pts = [...touchPoints.values()];
+      pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      pinchCenterX = (pts[0].x + pts[1].x) / 2;
+      pinchCenterY = (pts[0].y + pts[1].y) / 2;
+      pinchStartZoom = camZoom;
+      pinchCamX = camX;
+      pinchCamY = camY;
+      return;
+    }
+    if (touchPoints.size > 1) return;
+  }
+
+  // Right click
+  if (e.button === 2) { if (erasing) cancelErase(); if (currentTool === 'eraser') setTool('draw'); return; }
+
+  // Middle click pan
+  if (e.button === 1) {
+    panning = true; panBtn = 1;
+    panStartX = e.clientX; panStartY = e.clientY;
+    panStartCamX = camX; panStartCamY = camY;
+    return;
+  }
+
+  // Space + left click pan
+  if (e.button === 0 && spaceDown) {
+    panning = true; panBtn = 0;
+    panStartX = e.clientX; panStartY = e.clientY;
+    panStartCamX = camX; panStartCamY = camY;
+    return;
+  }
+
+  // Draw / erase / shape
+  if (e.button === 0) {
+    const p = getPos(e);
+    handleDown(p.x, p.y, p.p);
+  }
+});
+canvas.addEventListener('pointermove', (e) => {
+  e.preventDefault();
+
+  // Touch tracking
+  if (e.pointerType === 'touch') {
+    if (touchPoints.has(e.pointerId)) {
+      touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+    if (touchPoints.size === 2) {
+      const pts = [...touchPoints.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const cx = (pts[0].x + pts[1].x) / 2;
+      const cy = (pts[0].y + pts[1].y) / 2;
+      const dx = cx - pinchCenterX;
+      const dy = cy - pinchCenterY;
+      camZoom = Math.max(0.1, Math.min(10, pinchStartZoom * (dist / pinchStartDist)));
+      camX = pinchCamX + dx;
+      camY = pinchCamY + dy;
+      updateZoomDisplay();
+      redraw();
+      return;
+    }
+    if (touchPoints.size > 2) return;
+  }
+
+  // Pan
+  if (panning) {
+    camX = panStartCamX + (e.clientX - panStartX);
+    camY = panStartCamY + (e.clientY - panStartY);
+    redraw();
+    return;
+  }
+
+  // Draw / erase / shape
+  const p = getPos(e);
+  handleMove(p.x, p.y);
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (e.pointerType === 'touch') {
+    touchPoints.delete(e.pointerId);
+    if (touchPoints.size > 0) return;
+  }
+  if (panning) { panning = false; return; }
+  handleUp();
+});
+canvas.addEventListener('pointercancel', (e) => {
+  if (e.pointerType === 'touch') touchPoints.delete(e.pointerId);
+  if (erasing) cancelErase();
+  handleUp();
+  panning = false;
+});
+canvas.addEventListener('pointerleave', () => { if (erasing) cancelErase(); });
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  const newZoom = Math.max(0.1, Math.min(10, camZoom * factor));
+  const cx = (mx - camX) / camZoom;
+  const cy = (my - camY) / camZoom;
+  camX = mx - cx * newZoom;
+  camY = my - cy * newZoom;
+  camZoom = newZoom;
+  updateZoomDisplay();
+  redraw();
+}, { passive: false });
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (erasing) cancelErase();
+  if (currentTool === 'eraser') setTool('draw');
+});
+
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  canvas.width = window.innerWidth - 48;
+  canvas.height = window.innerHeight - 44 - 52;
   redraw();
 }
 
