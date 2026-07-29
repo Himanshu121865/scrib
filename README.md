@@ -48,22 +48,6 @@ cd www && python3 -m http.server 8080
 
 Open `http://localhost:8080`.
 
-### Controls
-
-| Key | Action |
-|---|---|
-| `D` | Pen (freehand) |
-| `E` | Eraser |
-| `R` | Rectangle |
-| `C` | Circle |
-| `L` | Line |
-| `A` | Arrow |
-| `Esc` | Cancel tool |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
-| Scroll wheel | Zoom toward cursor |
-| Middle-click / Space+drag | Pan |
-
 ### Run the CLI demo
 
 ```bash
@@ -74,20 +58,4 @@ cargo run --example demo > demo.svg
 
 ```
 raw points → RDP simplify → Catmull-Rom smooth → compute_widths → [x, y, width] output
-```
-
-## Project structure
-
-```
-src/
-  point.rs      — Point { x, y, pressure }
-  simplify.rs   — Ramer-Douglas-Peucker
-  smooth.rs     — Centripetal Catmull-Rom
-  stroke.rs     — Stroke builder + width computation
-  wasm.rs       — wasm-bindgen bindings
-  lib.rs        — re-exports
-www/
-  index.html    — full web demo
-examples/
-  demo.rs       — SVG generator
 ```
