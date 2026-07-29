@@ -9,7 +9,6 @@
 body { background: #1a1a1a; height: 100vh; overflow: hidden; font-family: monospace; }
 canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; left: 48px; right: 0; bottom: 52px; }
 
-/* Left tool panel */
 #leftPanel {
   position: fixed; left: 0; top: 0; bottom: 0; width: 48px;
   background: #232323; z-index: 20;
@@ -27,7 +26,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
 .tool-btn.active:hover { background: #f08030; }
 #leftPanel .sep { width: 24px; height: 1px; background: #333; margin: 6px 0; }
 
-/* Top bar */
 #topBar {
   position: fixed; top: 0; left: 48px; right: 0; height: 44px;
   background: #232323; z-index: 20;
@@ -48,7 +46,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
 #topBar .zoom-label { color: #ccc; font-size: 12px; min-width: 34px; text-align: center; }
 #topBar .icon-btn { font-size: 16px; padding: 5px 8px; }
 
-/* Bottom bar */
 #bottomBar {
   position: fixed; bottom: 0; left: 48px; right: 0; height: 52px;
   background: #232323; z-index: 20;
@@ -67,7 +64,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
 .size-preview { width: 20px; height: 20px; border-radius: 50%; background: red; flex-shrink: 0; transition: background 0.15s, transform 0.15s; border: 1px solid rgba(255,255,255,0.15); }
 #bottomInfo { color: #555; font-size: 11px; margin-left: auto; white-space: nowrap; }
 
-/* Shortcuts overlay */
 #shortcutsOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: none; align-items: center; justify-content: center; }
 #shortcutsOverlay.open { display: flex; }
 #shortcutsPanel { background: #232323; border-radius: 10px; padding: 24px 32px; max-width: 420px; width: 90%; color: #ccc; font-size: 13px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
@@ -80,7 +76,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
 </head>
 <body>
 
-<!-- Left tool panel -->
 <div id="leftPanel">
   <button class="tool-btn active" id="tooldraw" title="Pen (D)"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2a2.2 2.2 0 0 1 3 3L6 16l-4 1 1-4Z"/><path d="m12 4 3 3"/></svg></button>
   <button class="tool-btn" id="tooleraser" title="Eraser (E)"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13l4 4 8-8-4-4-8 8z"/><path d="m9.5 5.5 3 3"/></svg></button>
@@ -91,7 +86,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
   <button class="tool-btn" id="toolarrow" title="Arrow (A)">→</button>
 </div>
 
-<!-- Top bar -->
 <div id="topBar">
   <button class="icon-btn" id="undoBtn" title="Undo (Ctrl+Z)">↩</button>
   <button class="icon-btn" id="redoBtn" title="Redo (Ctrl+Shift+Z)">↪</button>
@@ -109,7 +103,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
   <button id="shortcutsBtn" style="font-weight:bold;color:#e86a20">?</button>
 </div>
 
-<!-- Bottom bar -->
 <div id="bottomBar">
   <div class="swatches">
     <div class="swatch" data-color="#222" style="background:#222"></div>
@@ -130,7 +123,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
   <span id="bottomInfo">scrib · scroll zoom · middle-drag pan</span>
 </div>
 
-<!-- Shortcuts overlay -->
 <div id="shortcutsOverlay">
   <div id="shortcutsPanel">
     <h2>Keyboard Shortcuts</h2>
@@ -150,7 +142,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
   </div>
 </div>
 
-<!-- Canvas -->
 <canvas id="canvas"></canvas>
 <canvas id="cursorCanvas" style="position:fixed;top:44px;left:48px;right:0;bottom:52px;pointer-events:none;z-index:5;background:transparent;"></canvas>
 
@@ -158,7 +149,6 @@ canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; le
 import init, { process_stroke, mesh_from_centerline, shape_mesh, hit_path } from './pkg/scrib.js';
 await init();
 
-// ---- Constants ----
 const EPSILON = 0.5;
 const SEGMENTS = 6;
 const MAX_UNDO = 100;
@@ -167,13 +157,11 @@ const THROTTLE_DRAW = 80;
 const THROTTLE_CURSOR = 40;
 const TOOLS = ['draw', 'eraser', 'rect', 'circle', 'line', 'arrow'];
 
-// ---- Canvas ----
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const cursorCanvas = document.getElementById('cursorCanvas');
 const cursorCtx = cursorCanvas.getContext('2d');
 
-// ---- State: document ----
 const strokes = [];
 const undoStack = [];
 const redoStack = [];
@@ -188,7 +176,6 @@ let currentColor = '#eee';
 let currentSize;
 let currentTool = 'draw';
 
-// ---- State: camera ----
 let camX = 0, camY = 0, camZoom = 1;
 let panning = false, panBtn = -1;
 let panStartX = 0, panStartY = 0, panStartCamX = 0, panStartCamY = 0;
@@ -200,7 +187,6 @@ let pinchStartDist = 0, pinchStartZoom = 1;
 let pinchCenterX = 0, pinchCenterY = 0;
 let pinchCamX = 0, pinchCamY = 0;
 
-// ---- State: multiplayer ----
 let ws = null;
 let myId = -1;
 let myColor = '#e86a20';
@@ -216,7 +202,6 @@ let liveStrokes = {};
 let liveShapes = {};
 let cursorAnimId = null;
 
-// ---- Undo / Redo ----
 function saveState() {
   undoStack.push(JSON.parse(JSON.stringify(strokes)));
   if (undoStack.length > MAX_UNDO) undoStack.shift();
@@ -247,7 +232,6 @@ function redo() {
   redraw();
 }
 
-// ---- Math helpers ----
 function screenToCanvas(sx, sy) {
   return { x: (sx - camX) / camZoom, y: (sy - camY) / camZoom };
 }
@@ -265,7 +249,6 @@ function distToSegment(px, py, x1, y1, x2, y2) {
 }
 function snap(val) { return showGrid ? Math.round(val / GRID) * GRID : val; }
 
-// ---- Drawing primitives ----
 function dot(x, y, color, size, pressure) {
   ctx.fillStyle = color;
   const r = (size / 2) * (0.3 + 0.7 * pressure);
@@ -339,7 +322,6 @@ function drawCursor(c, cxt) {
   g.stroke();
 }
 
-// ---- Hit testing ----
 function hitStroke(px, py) {
   for (let i = strokes.length - 1; i >= 0; i--) {
     if (toErase.has(i)) continue;
@@ -363,7 +345,6 @@ function hitStroke(px, py) {
   return -1;
 }
 
-// ---- Eraser ----
 function cancelErase() {
   erasing = false;
   toErase = new Set();
@@ -371,7 +352,6 @@ function cancelErase() {
   redraw();
 }
 
-// ---- Tool management ----
 function setTool(tool) {
   if (shaping) { shaping = false; shapeStart = null; redraw(); }
   if (drawing) { drawing = false; currentRaw = null; }
@@ -383,7 +363,6 @@ function setTool(tool) {
   canvas.style.cursor = tool === 'eraser' ? 'pointer' : 'crosshair';
 }
 
-// ---- Camera / zoom ----
 function updateZoomDisplay() {
   const el = document.getElementById('zoomLabel');
   if (el) el.textContent = Math.round(camZoom * 100) + '%';
@@ -397,7 +376,6 @@ function zoomTo(newZoom) {
   redraw();
 }
 
-// ---- Incremental stroke processing ----
 const CAP_FLOATS = 8 * 6; // mesh_from_centerline uses cap_segments=8
 const INCR_THROTTLE = 30;
 let cachedCenterline = null;
@@ -462,7 +440,6 @@ function finalizeStroke() {
   resetIncrCache();
 }
 
-// ---- Pointer handlers ----
 function handleDown(x, y, pressure) {
   if (currentTool === 'eraser') {
     erasing = true;
@@ -579,7 +556,6 @@ function handleUp() {
   redraw();
 }
 
-// ---- Redraw ----
 function redraw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = bgColor;
@@ -661,7 +637,6 @@ function redrawCursors() {
   cursorCtx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
-// ---- Multiplayer ----
 function onWSInit(msg) {
   myId = msg.id;
   myColor = msg.color;
@@ -797,7 +772,6 @@ function sendCursor(x, y) {
 initWS();
 tickAnimation();
 
-// ---- Size slider ----
 const sizeSlider = document.getElementById('sizeSlider');
 const sizeLabel = document.getElementById('sizeLabel');
 function updateSize() {
@@ -810,7 +784,6 @@ function updateSize() {
 sizeSlider.addEventListener('input', updateSize);
 updateSize();
 
-// ---- Color swatches ----
 document.querySelectorAll('.swatch').forEach(el => {
   el.addEventListener('click', () => {
     document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
@@ -832,7 +805,6 @@ document.getElementById('customColor').addEventListener('input', (e) => {
   updateSize();
 });
 
-// ---- Tool buttons ----
 document.getElementById('tooldraw').addEventListener('click', () => setTool('draw'));
 document.getElementById('tooleraser').addEventListener('click', () => setTool('eraser'));
 document.getElementById('toolrect').addEventListener('click', () => setTool('rect'));

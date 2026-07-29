@@ -92,7 +92,6 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
     let (mut ws_tx, mut ws_rx) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
 
-    // Wait for join message to determine room
     let join_msg = match ws_rx.next().await {
         Some(Ok(Message::Text(text))) => text,
         _ => return,
@@ -109,7 +108,6 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
 
     let room_id = parsed.room.unwrap_or_else(|| "default".to_string());
 
-    // Register user in room
     let (user_id, user_color, user_list, existing_strokes) = {
         let mut rooms = rooms.write().await;
         let room = rooms.entry(room_id.clone()).or_insert(Room {
@@ -135,7 +133,6 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
                 color: u.color.clone(),
             })
             .collect();
-        // Ensure all stored strokes have an id (for erase-by-id to work)
         for (idx, stored) in room.strokes.iter_mut().enumerate() {
             if let serde_json::Value::Object(ref mut map) = stored.data {
                 if !map.contains_key("id") {
@@ -155,7 +152,6 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
         (id, color, user_list, existing_strokes)
     };
 
-    // Send init to the new user
     let init = ServerMsg {
         msg_type: "init".to_string(),
         id: Some(user_id),
@@ -172,7 +168,6 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
         .send(Message::Text(serde_json::to_string(&init).unwrap()))
         .await;
 
-    // Broadcast join to others in room
     let join_broadcast = ServerMsg {
         msg_type: "join".to_string(),
         id: Some(user_id),
@@ -189,7 +184,6 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
 
     println!("User {user_id} ({user_color}) joined room '{room_id}' [{addr}]");
 
-    // Forward background task: rx → ws_tx
     let forward = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if ws_tx.send(msg).await.is_err() {
@@ -198,7 +192,6 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
         }
     });
 
-    // Read loop: ws_rx → broadcast
     while let Some(msg) = ws_rx.next().await {
         match msg {
             Ok(Message::Text(text)) => {
@@ -224,12 +217,10 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
                         broadcast(&rooms, &room_id, user_id, &server_msg).await;
                     }
                     "stroke-end" => {
-                        // Store the actual stroke (not the id wrapper) for late joiners
                         if let Some(ref data) = parsed.data {
                             let mut actual_stroke = data.get("stroke")
                                 .and_then(|v| if v.is_null() { None } else { Some(v.clone()) })
                                 .unwrap_or_else(|| data.clone());
-                            // Ensure every stored stroke has an id (for erase-by-id to work)
                             if let serde_json::Value::Object(ref mut map) = actual_stroke {
                                 if !map.contains_key("id") {
                                     let sid = format!("srv_{}_{}", user_id,
@@ -318,7 +309,6 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
         }
     }
 
-    // Cleanup on disconnect
     forward.abort();
     {
         let mut rooms = rooms.write().await;
