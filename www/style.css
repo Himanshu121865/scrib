@@ -1,0 +1,67 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a1a; height: 100vh; overflow: hidden; font-family: monospace; }
+canvas#canvas { background: #fff; display: block; position: fixed; top: 44px; left: 48px; right: 0; bottom: 52px; }
+
+#leftPanel {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 48px;
+  background: #232323; z-index: 20;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 8px 0; gap: 2px;
+}
+.tool-btn {
+  width: 36px; height: 36px; border: none; border-radius: 8px;
+  background: transparent; color: #888; cursor: pointer;
+  font-size: 18px; display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s;
+}
+.tool-btn:hover { background: #333; color: #ddd; }
+.tool-btn.active { background: #e86a20; color: #fff; }
+.tool-btn.active:hover { background: #f08030; }
+#leftPanel .sep { width: 24px; height: 1px; background: #333; margin: 6px 0; }
+
+#topBar {
+  position: fixed; top: 0; left: 48px; right: 0; height: 44px;
+  background: #232323; z-index: 20;
+  display: flex; align-items: center; gap: 4px; padding: 0 10px;
+}
+#topBar button {
+  padding: 5px 9px; border: none; border-radius: 6px;
+  background: transparent; color: #aaa; cursor: pointer;
+  font-family: monospace; font-size: 13px; transition: background 0.1s;
+  white-space: nowrap;
+}
+#topBar button:hover { background: #333; color: #eee; }
+#topBar .sep { width: 1px; height: 20px; background: #333; margin: 0 4px; }
+#topBar .tog-on { background: rgba(232,106,32,0.15); color: #e86a20; }
+#topBar .tog-on:hover { background: rgba(232,106,32,0.25); color: #f08030; }
+#bgToggle.tog-on { background: transparent; color: #e86a20; }
+#bgToggle.tog-on:hover { background: #333; color: #f08030; }
+#topBar .zoom-label { color: #ccc; font-size: 12px; min-width: 34px; text-align: center; }
+#topBar .icon-btn { font-size: 16px; padding: 5px 8px; }
+
+#bottomBar {
+  position: fixed; bottom: 0; left: 48px; right: 0; height: 52px;
+  background: #232323; z-index: 20;
+  display: flex; align-items: center; gap: 14px; padding: 0 16px;
+}
+.swatches { display: flex; align-items: center; gap: 6px; }
+.swatch { width: 24px; height: 24px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; transition: border-color 0.1s; flex-shrink: 0; }
+.swatch.active { border-color: #e86a20; }
+.swatch-picker { display: none; }
+.swatch-picker-btn { width: 24px; height: 24px; border-radius: 6px; border: 1.5px dashed #555; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #666; transition: border-color 0.15s, color 0.15s, background 0.15s; background: #2a2a2a; position: relative; }
+.swatch-picker-btn:hover { border-color: #e86a20; color: #e86a20; }
+.swatch-picker-btn.active { border-style: solid; border-color: #e86a20; }
+.size-wrap { display: flex; align-items: center; gap: 8px; color: #999; font-size: 12px; }
+.size-wrap input { width: 80px; accent-color: #e86a20; cursor: pointer; }
+.size-wrap span { min-width: 24px; text-align: center; color: #ccc; }
+.size-preview { width: 20px; height: 20px; border-radius: 50%; background: red; flex-shrink: 0; transition: background 0.15s, transform 0.15s; border: 1px solid rgba(255,255,255,0.15); }
+#bottomInfo { color: #555; font-size: 11px; margin-left: auto; white-space: nowrap; }
+
+#shortcutsOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: none; align-items: center; justify-content: center; }
+#shortcutsOverlay.open { display: flex; }
+#shortcutsPanel { background: #232323; border-radius: 10px; padding: 24px 32px; max-width: 420px; width: 90%; color: #ccc; font-size: 13px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+#shortcutsPanel h2 { margin: 0 0 16px; font-size: 15px; color: #eee; }
+#shortcutsPanel .row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #333; }
+#shortcutsPanel .row:last-child { border-bottom: none; }
+#shortcutsPanel .keys { color: #e86a20; }
+#shortcutsPanel .keys kbd { background: #333; padding: 1px 6px; border-radius: 3px; font-family: monospace; font-size: 12px; color: #ddd; margin: 0 2px; }

@@ -1,7 +1,6 @@
 use crate::point::Point;
 
 pub fn rdp(points: &[Point], epsilon: f64) -> Vec<Point> {
-    // Ramer-Douglas-Peucker: keep the farthest outlier, recurse on both sides
     if points.len() < 3 {
         return points.to_vec();
     }
@@ -37,7 +36,6 @@ pub fn rdp(points: &[Point], epsilon: f64) -> Vec<Point> {
 }
 
 fn perpendicular_distance(point: &Point, line_start: &Point, line_end: &Point) -> f64 {
-    // Distance from point to the segment line_start..line_end
     let dx = line_end.x - line_start.x;
     let dy = line_end.y - line_start.y;
     let length_sq = dx * dx + dy * dy;

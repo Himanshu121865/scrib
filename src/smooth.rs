@@ -1,7 +1,6 @@
 use crate::point::Point;
 
 pub fn catmull_rom(points: &[Point], segments: usize) -> Vec<Point> {
-    // Centripetal Catmull-Rom (alpha=0.5) — smooth curve through all points
     if points.len() < 2 {
         return points.to_vec();
     }
@@ -25,7 +24,6 @@ pub fn catmull_rom(points: &[Point], segments: usize) -> Vec<Point> {
 }
 
 fn compute_knots(points: &[Point], alpha: f64) -> Vec<f64> {
-    // Cumulative chord length (alpha=0.5 centripetal, alpha=1.0 chordal)
     let mut knots = Vec::with_capacity(points.len());
     knots.push(0.0);
     for i in 1..points.len() {
