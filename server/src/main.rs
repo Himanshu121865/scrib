@@ -51,6 +51,10 @@ struct ServerMsg {
     y: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     strokes: Option<Vec<StrokeEntry>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owners: Option<Vec<UserId>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -73,6 +77,7 @@ struct ClientMsg {
     data: Option<serde_json::Value>,
     x: Option<f64>,
     y: Option<f64>,
+    ids: Option<Vec<String>>,
 }
 
 async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
@@ -130,6 +135,15 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
                 color: u.color.clone(),
             })
             .collect();
+        // Ensure all stored strokes have an id (for erase-by-id to work)
+        for (idx, stored) in room.strokes.iter_mut().enumerate() {
+            if let serde_json::Value::Object(ref mut map) = stored.data {
+                if !map.contains_key("id") {
+                    let sid = format!("srv_{}_{}", stored.user_id, idx);
+                    map.insert("id".to_string(), serde_json::Value::String(sid));
+                }
+            }
+        }
         let existing_strokes: Vec<StrokeEntry> = room
             .strokes
             .iter()
@@ -151,6 +165,8 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
         x: None,
         y: None,
         strokes: Some(existing_strokes),
+        ids: None,
+        owners: None,
     };
     let _ = ws_tx
         .send(Message::Text(serde_json::to_string(&init).unwrap()))
@@ -166,6 +182,8 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
         x: None,
         y: None,
         strokes: None,
+        ids: None,
+        owners: None,
     };
     broadcast(&rooms, &room_id, user_id, &join_broadcast).await;
 
@@ -200,15 +218,27 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
                             x: None,
                             y: None,
                             strokes: None,
+                            ids: None,
+                            owners: None,
                         };
                         broadcast(&rooms, &room_id, user_id, &server_msg).await;
                     }
                     "stroke-end" => {
                         // Store the actual stroke (not the id wrapper) for late joiners
                         if let Some(ref data) = parsed.data {
-                            let actual_stroke = data.get("stroke")
+                            let mut actual_stroke = data.get("stroke")
                                 .and_then(|v| if v.is_null() { None } else { Some(v.clone()) })
                                 .unwrap_or_else(|| data.clone());
+                            // Ensure every stored stroke has an id (for erase-by-id to work)
+                            if let serde_json::Value::Object(ref mut map) = actual_stroke {
+                                if !map.contains_key("id") {
+                                    let sid = format!("srv_{}_{}", user_id,
+                                        std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default().as_nanos());
+                                    map.insert("id".to_string(), serde_json::Value::String(sid));
+                                }
+                            }
                             let mut rooms_lock = rooms.write().await;
                             if let Some(room) = rooms_lock.get_mut(&room_id) {
                                 room.strokes.push(StoredStroke {
@@ -227,6 +257,41 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
                             x: None,
                             y: None,
                             strokes: None,
+                            ids: None,
+                            owners: None,
+                        };
+                        broadcast(&rooms, &room_id, user_id, &server_msg).await;
+                    }
+                    "erase" => {
+                        let owners: Vec<UserId> = if let Some(ref ids) = parsed.ids {
+                            let mut rooms_lock = rooms.write().await;
+                            if let Some(room) = rooms_lock.get_mut(&room_id) {
+                                let mut removed_owners = Vec::new();
+                                let before = room.strokes.len();
+                                room.strokes.retain(|s| {
+                                    let sid = s.data.get("id").and_then(|v| v.as_str());
+                                    let matched = s.user_id == user_id && ids.iter().any(|id| Some(id.as_str()) == sid);
+                                    if matched {
+                                        removed_owners.push(s.user_id);
+                                        eprintln!("  erase: removing stroke id={:?} owner={}", sid, s.user_id);
+                                    }
+                                    !matched
+                                });
+                                eprintln!("erase from user {user_id}: ids={ids:?}, removed={}, owners={:?}", before - room.strokes.len(), removed_owners);
+                                removed_owners
+                            } else { Vec::new() }
+                        } else { Vec::new() };
+                        let server_msg = ServerMsg {
+                            msg_type: "erase".to_string(),
+                            id: Some(user_id),
+                            color: None,
+                            users: None,
+                            data: None,
+                            x: None,
+                            y: None,
+                            strokes: None,
+                            ids: parsed.ids.clone(),
+                            owners: if owners.is_empty() { None } else { Some(owners) },
                         };
                         broadcast(&rooms, &room_id, user_id, &server_msg).await;
                     }
@@ -240,6 +305,8 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
                             x: parsed.x,
                             y: parsed.y,
                             strokes: None,
+                            ids: None,
+                            owners: None,
                         };
                         broadcast(&rooms, &room_id, user_id, &server_msg).await;
                     }
@@ -273,6 +340,8 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
         x: None,
         y: None,
         strokes: None,
+        ids: None,
+        owners: None,
     };
     broadcast(&rooms, &room_id, user_id, &leave_msg).await;
     println!("User {user_id} left room '{room_id}'");

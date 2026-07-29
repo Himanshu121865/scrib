@@ -214,6 +214,7 @@ let lastIncrTime = 0;
 let cachedMesh = null;
 let liveStrokes = {};
 let liveShapes = {};
+let cursorAnimId = null;
 
 // ---- Undo / Redo ----
 function saveState() {
@@ -330,7 +331,7 @@ function drawGrid() {
 function drawCursor(c, cxt) {
   const g = cxt || ctx;
   g.beginPath();
-  g.arc(c.x, c.y, 5, 0, Math.PI * 2);
+  g.arc(c.rx, c.ry, 5, 0, Math.PI * 2);
   g.fillStyle = c.color;
   g.fill();
   g.strokeStyle = 'rgba(0,0,0,0.25)';
@@ -445,12 +446,12 @@ function finalizeStroke() {
   saveState();
   let obj;
   if (currentRaw.length === 3) {
-    obj = { type: 'dot', x: currentRaw[0], y: currentRaw[1], color: currentColor, size: currentSize, pressure: currentRaw[2] };
+    obj = { type: 'dot', x: currentRaw[0], y: currentRaw[1], color: currentColor, size: currentSize, pressure: currentRaw[2], id: currentStrokeId, userId: myId };
     strokes.push(obj);
   } else if (currentRaw.length > 3) {
     const data = Array.from(process_stroke(currentRaw, EPSILON, SEGMENTS, currentSize));
     const mesh = Array.from(mesh_from_centerline(data));
-    obj = { type: 'path', data, mesh, color: currentColor, size: currentSize };
+    obj = { type: 'path', data, mesh, color: currentColor, size: currentSize, id: currentStrokeId, userId: myId };
     strokes.push(obj);
   }
   if (ws?.readyState === WebSocket.OPEN && currentStrokeId) {
@@ -535,7 +536,21 @@ function handleUp() {
     erasing = false;
     saveState();
     const sorted = [...toErase].sort((a, b) => b - a);
-    for (const idx of sorted) strokes.splice(idx, 1);
+    const erasedIds = [];
+    for (const idx of sorted) {
+      const s = strokes[idx];
+      if (!s) continue;
+      if (s.userId !== undefined && s.userId !== myId) continue;
+      if (s.id) erasedIds.push(s.id);
+      strokes.splice(idx, 1);
+    }
+    if (erasedIds.length > 0) {
+      try {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({type: 'erase', ids: erasedIds}));
+        }
+      } catch(e) { console.error('erase send failed', e); }
+    }
     toErase = new Set();
     eraserPath = [];
     redraw();
@@ -553,7 +568,7 @@ function handleUp() {
   if (Math.abs(shapeStart.x2 - shapeStart.x) > 2 || Math.abs(shapeStart.y2 - shapeStart.y) > 2) {
     saveState();
     const mesh = Array.from(shape_mesh(currentTool, shapeStart.x, shapeStart.y, shapeStart.x2, shapeStart.y2, currentSize, 32));
-    const obj = { type: currentTool, x1: shapeStart.x, y1: shapeStart.y, x2: shapeStart.x2, y2: shapeStart.y2, mesh, color: currentColor, size: currentSize };
+    const obj = { type: currentTool, x1: shapeStart.x, y1: shapeStart.y, x2: shapeStart.x2, y2: shapeStart.y2, mesh, color: currentColor, size: currentSize, id: currentShapeId, userId: myId };
     strokes.push(obj);
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({type: 'stroke-end', data: {id: currentShapeId, stroke: obj}}));
@@ -597,13 +612,51 @@ function redraw() {
   redrawCursors();
 }
 
+function tickAnimation() {
+  let dirtyCursors = false;
+  let dirtyShapes = false;
+  for (const id in remoteCursors) {
+    const c = remoteCursors[id];
+    if (c.tx === -999) continue;
+    const dx = c.tx - c.rx;
+    const dy = c.ty - c.ry;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+      if (c.rx !== c.tx) { c.rx = c.tx; c.ry = c.ty; dirtyCursors = true; }
+    } else {
+      c.rx += dx * 0.25;
+      c.ry += dy * 0.25;
+      dirtyCursors = true;
+    }
+  }
+  for (const id in liveShapes) {
+    const s = liveShapes[id];
+    if (s.tx1 === undefined) continue;
+    const dx1 = s.tx1 - s.rx1, dy1 = s.ty1 - s.ry1;
+    const dx2 = s.tx2 - s.rx2, dy2 = s.ty2 - s.ry2;
+    if (Math.abs(dx1) < 0.5 && Math.abs(dy1) < 0.5 && Math.abs(dx2) < 0.5 && Math.abs(dy2) < 0.5) {
+      if (s.rx1 !== s.tx1 || s.ry1 !== s.ty1 || s.rx2 !== s.tx2 || s.ry2 !== s.ty2) {
+        s.rx1 = s.tx1; s.ry1 = s.ty1; s.rx2 = s.tx2; s.ry2 = s.ty2;
+        s.mesh = Array.from(shape_mesh(s.type, s.rx1, s.ry1, s.rx2, s.ry2, s.size, 32));
+        dirtyShapes = true;
+      }
+    } else {
+      s.rx1 += dx1 * 0.25; s.ry1 += dy1 * 0.25;
+      s.rx2 += dx2 * 0.25; s.ry2 += dy2 * 0.25;
+      s.mesh = Array.from(shape_mesh(s.type, s.rx1, s.ry1, s.rx2, s.ry2, s.size, 32));
+      dirtyShapes = true;
+    }
+  }
+  if (dirtyShapes) redraw();
+  else if (dirtyCursors) redrawCursors();
+  cursorAnimId = requestAnimationFrame(tickAnimation);
+}
 function redrawCursors() {
   cursorCtx.setTransform(1, 0, 0, 1, 0, 0);
   cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
   cursorCtx.setTransform(camZoom, 0, 0, camZoom, camX, camY);
   for (const id in remoteCursors) {
     const c = remoteCursors[id];
-    if (c.x > -900) drawCursor(c, cursorCtx);
+    if (c.rx > -900) drawCursor(c, cursorCtx);
   }
   cursorCtx.setTransform(1, 0, 0, 1, 0, 0);
 }
@@ -613,11 +666,12 @@ function onWSInit(msg) {
   myId = msg.id;
   myColor = msg.color;
   for (const u of msg.users)
-    if (u.id !== myId) remoteCursors[u.id] = {color: u.color, x: -999, y: -999};
+    if (u.id !== myId) remoteCursors[u.id] = {color: u.color, x: -999, y: -999, rx: -999, ry: -999, tx: -999, ty: -999};
   if (msg.strokes) {
     for (const entry of msg.strokes) {
       const s = entry.stroke;
       s.userId = entry.user_id;
+      if (!s.id) s.id = 's_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       if (s.type !== 'path' && s.type !== 'dot' && !s.mesh) {
         s.mesh = Array.from(shape_mesh(s.type, s.x1, s.y1, s.x2, s.y2, s.size, 32));
       }
@@ -627,7 +681,7 @@ function onWSInit(msg) {
   updateUserCount();
 }
 function onWSJoin(msg) {
-  remoteCursors[msg.id] = {color: msg.color, x: -999, y: -999};
+  remoteCursors[msg.id] = {color: msg.color, x: -999, y: -999, rx: -999, ry: -999, tx: -999, ty: -999};
   updateUserCount();
 }
 function onWSLeave(msg) {
@@ -643,6 +697,7 @@ function onWSStrokeEnd(msg) {
   delete liveShapes[msg.data.id];
   const s = msg.data.stroke || msg.data;
   s.userId = msg.id;
+  if (!s.id) s.id = msg.data.id;
   if (s.type !== 'path' && s.type !== 'dot' && !s.mesh) {
     s.mesh = Array.from(shape_mesh(s.type, s.x1, s.y1, s.x2, s.y2, s.size, 32));
   }
@@ -661,18 +716,47 @@ function onWSStrokeUpdate(msg) {
 }
 function onWSShapeUpdate(msg) {
   if (!msg.data) return;
-  const s = msg.data.shape;
-  if (s && s.type !== 'path' && s.type !== 'dot') {
-    s.mesh = Array.from(shape_mesh(s.type, s.x1, s.y1, s.x2, s.y2, s.size, 32));
+  const shape = msg.data.shape;
+  if (!shape || shape.type === 'path' || shape.type === 'dot') return;
+  let s = liveShapes[msg.data.id];
+  const first = !s;
+  if (first) {
+    s = { type: shape.type, color: shape.color, size: shape.size };
+    liveShapes[msg.data.id] = s;
   }
-  liveShapes[msg.data.id] = s;
+  s.tx1 = shape.x1; s.ty1 = shape.y1; s.tx2 = shape.x2; s.ty2 = shape.y2;
+  s.color = shape.color;
+  s.size = shape.size;
+  if (first) {
+    s.rx1 = shape.x1; s.ry1 = shape.y1; s.rx2 = shape.x2; s.ry2 = shape.y2;
+    s.mesh = Array.from(shape_mesh(s.type, s.rx1, s.ry1, s.rx2, s.ry2, s.size, 32));
+    redraw();
+  }
+}
+function onWSErase(msg) {
+  if (!msg.ids || msg.ids.length === 0) return;
+  saveState();
+  for (let i = 0; i < msg.ids.length; i++) {
+    const id = msg.ids[i];
+    const ownerId = msg.owners ? msg.owners[i] : null;
+    let found = false;
+    for (let j = strokes.length - 1; j >= 0; j--) {
+      if (strokes[j].id === id) { strokes.splice(j, 1); found = true; break; }
+    }
+    if (!found && ownerId !== null) {
+      for (let j = strokes.length - 1; j >= 0; j--) {
+        if (strokes[j].userId === ownerId) { strokes.splice(j, 1); break; }
+      }
+    }
+  }
   redraw();
 }
 function onWSCursor(msg) {
   if (!remoteCursors[msg.id]) return;
-  remoteCursors[msg.id].x = msg.x;
-  remoteCursors[msg.id].y = msg.y;
-  redrawCursors();
+  const c = remoteCursors[msg.id];
+  if (c.tx === -999) { c.rx = msg.x; c.ry = msg.y; }
+  c.tx = msg.x;
+  c.ty = msg.y;
 }
 function initWS() {
   roomId = location.hash.slice(1) || Math.random().toString(36).slice(2, 7);
@@ -692,6 +776,7 @@ function initWS() {
       case 'stroke-update': onWSStrokeUpdate(msg); break;
       case 'shape-update': onWSShapeUpdate(msg); break;
       case 'cursor': onWSCursor(msg); break;
+      case 'erase': onWSErase(msg); break;
     }
   };
   ws.onclose = () => {
@@ -710,6 +795,7 @@ function sendCursor(x, y) {
 }
 
 initWS();
+tickAnimation();
 
 // ---- Size slider ----
 const sizeSlider = document.getElementById('sizeSlider');
