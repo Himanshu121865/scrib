@@ -55,9 +55,14 @@ canvas { background: #fff; display: block; position: fixed; top: 44px; left: 48p
 .swatches { display: flex; align-items: center; gap: 6px; }
 .swatch { width: 24px; height: 24px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; transition: border-color 0.1s; flex-shrink: 0; }
 .swatch.active { border-color: #e86a20; }
+.swatch-picker { display: none; }
+.swatch-picker-btn { width: 24px; height: 24px; border-radius: 6px; border: 1.5px dashed #555; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #666; transition: border-color 0.15s, color 0.15s, background 0.15s; background: #2a2a2a; position: relative; }
+.swatch-picker-btn:hover { border-color: #e86a20; color: #e86a20; }
+.swatch-picker-btn.active { border-style: solid; border-color: #e86a20; }
 .size-wrap { display: flex; align-items: center; gap: 8px; color: #999; font-size: 12px; }
 .size-wrap input { width: 80px; accent-color: #e86a20; cursor: pointer; }
 .size-wrap span { min-width: 24px; text-align: center; color: #ccc; }
+.size-preview { width: 20px; height: 20px; border-radius: 50%; background: red; flex-shrink: 0; transition: background 0.15s, transform 0.15s; border: 1px solid rgba(255,255,255,0.15); }
 #bottomInfo { color: #555; font-size: 11px; margin-left: auto; white-space: nowrap; }
 
 /* Shortcuts overlay */
@@ -111,11 +116,14 @@ canvas { background: #fff; display: block; position: fixed; top: 44px; left: 48p
     <div class="swatch" data-color="#3a3" style="background:#3a3"></div>
     <div class="swatch" data-color="#e83" style="background:#e83"></div>
     <div class="swatch" data-color="#eee" style="background:#eee;border:1px solid #555"></div>
+    <input type="color" id="customColor" class="swatch-picker" value="#e86a20">
+    <div id="customColorBtn" class="swatch-picker-btn" title="Custom color">+</div>
   </div>
   <div class="size-wrap">
     <label>Size</label>
-    <input type="range" id="sizeSlider" min="1" max="12" step="0.5" value="2.5">
-    <span id="sizeLabel">2.5</span>
+    <div id="sizePreview" class="size-preview"></div>
+    <input type="range" id="sizeSlider" min="1" max="20" step="0.5" value="10">
+    <span id="sizeLabel">10.0</span>
   </div>
   <span id="bottomInfo">scrib · scroll zoom · middle-drag pan</span>
 </div>
@@ -429,6 +437,8 @@ function cancelErase() {
   redraw();
 }
 
+function snap(val) { return showGrid ? Math.round(val / 30) * 30 : val; }
+
 function handleDown(x, y, pressure) {
   if (currentTool === 'eraser') {
     erasing = true;
@@ -443,7 +453,7 @@ function handleDown(x, y, pressure) {
   }
   // Shape tool
   shaping = true;
-  shapeStart = { x, y, x2: x, y2: y };
+  shapeStart = { x: snap(x), y: snap(y), x2: snap(x), y2: snap(y) };
 }
 
 function handleMove(x, y) {
@@ -469,8 +479,8 @@ function handleMove(x, y) {
   }
   // Shape tool
   if (!shaping) return;
-  shapeStart.x2 = x;
-  shapeStart.y2 = y;
+  shapeStart.x2 = snap(x);
+  shapeStart.y2 = snap(y);
   redraw();
 }
 
@@ -514,15 +524,36 @@ document.querySelectorAll('.swatch').forEach(el => {
     document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
     el.classList.add('active');
     currentColor = el.dataset.color;
+    const pickerBtn = document.getElementById('customColorBtn');
+    pickerBtn.style.background = '#2a2a2a';
+    pickerBtn.classList.remove('active');
+    updateSize();
   });
 });
 document.querySelector('.swatch[data-color="#eee"]').classList.add('active');
+
+document.getElementById('customColorBtn').addEventListener('click', () => {
+  document.getElementById('customColor').click();
+});
+document.getElementById('customColor').addEventListener('input', (e) => {
+  currentColor = e.target.value;
+  document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+  const btn = document.getElementById('customColorBtn');
+  btn.style.background = currentColor;
+  btn.classList.add('active');
+  updateSize();
+});
 
 const sizeSlider = document.getElementById('sizeSlider');
 const sizeLabel = document.getElementById('sizeLabel');
 function updateSize() {
   currentSize = parseFloat(sizeSlider.value);
   sizeLabel.textContent = currentSize.toFixed(1);
+  const p = document.getElementById('sizePreview');
+  const s = Math.max(2, Math.min(20, currentSize * 2));
+  p.style.width = s + 'px';
+  p.style.height = s + 'px';
+  p.style.background = currentColor;
 }
 sizeSlider.addEventListener('input', updateSize);
 updateSize();
