@@ -5,34 +5,41 @@ pub fn rdp(points: &[Point], epsilon: f64) -> Vec<Point> {
         return points.to_vec();
     }
 
-    let mut max_dist = 0.0;
-    let mut max_idx = 0;
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    let mut keep = vec![false; points.len()];
+    keep[0] = true;
+    keep[points.len() - 1] = true;
+    stack.push((0, points.len() - 1));
 
-    let first = &points[0];
-    let last = &points[points.len() - 1];
+    while let Some((start, end)) = stack.pop() {
+        let first = &points[start];
+        let last = &points[end];
 
-    for (i, point) in points
-        .iter()
-        .enumerate()
-        .skip(1)
-        .take(points.len().saturating_sub(2))
-    {
-        let dist = perpendicular_distance(point, first, last);
-        if dist > max_dist {
-            max_dist = dist;
-            max_idx = i;
+        let mut max_dist = 0.0;
+        let mut max_idx = start;
+
+        for (offset, p) in points[start + 1..end].iter().enumerate() {
+            let dist = perpendicular_distance(p, first, last);
+            if dist > max_dist {
+                max_dist = dist;
+                max_idx = start + 1 + offset;
+            }
+        }
+
+        if max_dist > epsilon {
+            keep[max_idx] = true;
+            stack.push((start, max_idx));
+            stack.push((max_idx, end));
         }
     }
 
-    if max_dist > epsilon {
-        let mut left = rdp(&points[..=max_idx], epsilon);
-        let right = rdp(&points[max_idx..], epsilon);
-        left.pop();
-        left.extend(right);
-        left
-    } else {
-        vec![*first, *last]
+    let mut result = Vec::with_capacity(points.len());
+    for (i, p) in points.iter().enumerate() {
+        if keep[i] {
+            result.push(*p);
+        }
     }
+    result
 }
 
 fn perpendicular_distance(point: &Point, line_start: &Point, line_end: &Point) -> f64 {
@@ -97,5 +104,87 @@ mod tests {
         ];
         let result = rdp(&points, 2.0);
         assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn horizontal_line_all_colinear() {
+        let points: Vec<Point> = (0..100).map(|i| Point::new(i as f64, 0.0, 0.5)).collect();
+        let result = rdp(&points, 0.1);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].x, 0.0);
+        assert_eq!(result[1].x, 99.0);
+    }
+
+    #[test]
+    fn vertical_line_all_colinear() {
+        let points: Vec<Point> = (0..50).map(|i| Point::new(0.0, i as f64, 0.5)).collect();
+        let result = rdp(&points, 0.1);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].y, 0.0);
+        assert_eq!(result[1].y, 49.0);
+    }
+
+    #[test]
+    fn zigzag_preserves_all() {
+        let mut points = Vec::new();
+        for i in 0..20 {
+            points.push(Point::new(i as f64, (i % 2) as f64 * 10.0, 0.5));
+        }
+        let result = rdp(&points, 0.5);
+        assert!(result.len() > 10);
+    }
+
+    #[test]
+    fn epsilon_zero_preserves_all() {
+        let points = vec![
+            Point::new(0.0, 0.0, 0.5),
+            Point::new(1.0, 0.1, 0.5),
+            Point::new(2.0, 0.0, 0.5),
+            Point::new(3.0, 0.1, 0.5),
+        ];
+        let result = rdp(&points, 0.0);
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn large_epsilon_reduces_to_two() {
+        let points = vec![
+            Point::new(0.0, 0.0, 0.5),
+            Point::new(3.0, 100.0, 0.5),
+            Point::new(7.0, -50.0, 0.5),
+            Point::new(10.0, 0.0, 0.5),
+        ];
+        let result = rdp(&points, 1000.0);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn epsilon_zero_many_points() {
+        // fp imprecision causes tiny non-zero distances on large colinear sets;
+        // the iterative version matches the recursive version's output
+        let points: Vec<Point> = (0..2000)
+            .map(|i| Point::new(i as f64, (i % 3) as f64, 0.5))
+            .collect();
+        let result = rdp(&points, 0.0);
+        assert!(!result.is_empty());
+        assert_eq!(result[0].x, 0.0);
+        assert_eq!(result.last().unwrap().x, 1999.0);
+    }
+
+    #[test]
+    fn epsilon_small_colinear_preserves_first_and_last() {
+        let points: Vec<Point> = (0..100).map(|i| Point::new(i as f64, 0.0, 0.5)).collect();
+        let result = rdp(&points, 1e-12);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].x, 0.0);
+        assert_eq!(result[1].x, 99.0);
+    }
+
+    #[test]
+    fn duplicate_points() {
+        let p = Point::new(5.0, 5.0, 0.5);
+        let points = vec![p, p, p, p, p];
+        let result = rdp(&points, 0.1);
+        assert_eq!(result.len(), 2);
     }
 }

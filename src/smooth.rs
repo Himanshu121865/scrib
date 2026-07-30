@@ -120,4 +120,80 @@ mod tests {
         assert_eq!(result.first().unwrap(), &points[0]);
         assert_eq!(result.last().unwrap(), &points[points.len() - 1]);
     }
+
+    #[test]
+    fn zero_segments_returns_input() {
+        let points = vec![
+            Point::new(0.0, 0.0, 0.5),
+            Point::new(1.0, 1.0, 0.5),
+            Point::new(2.0, 0.0, 0.5),
+        ];
+        let result = catmull_rom(&points, 0);
+        assert_eq!(result.len(), points.len());
+    }
+
+    #[test]
+    fn interpolates_pressure() {
+        let points = vec![
+            Point::new(0.0, 0.0, 0.0),
+            Point::new(5.0, 5.0, 1.0),
+            Point::new(10.0, 0.0, 0.5),
+        ];
+        let result = catmull_rom(&points, 6);
+        for p in &result {
+            assert!(p.pressure >= 0.0);
+            assert!(p.pressure <= 1.0);
+        }
+    }
+
+    #[test]
+    fn four_points_produces_more() {
+        let points = vec![
+            Point::new(0.0, 0.0, 0.5),
+            Point::new(3.0, 4.0, 0.5),
+            Point::new(6.0, -4.0, 0.5),
+            Point::new(9.0, 0.0, 0.5),
+        ];
+        let result = catmull_rom(&points, 5);
+        assert_eq!(result.len(), 3 * 5 + 1);
+        assert!(result.len() > points.len());
+    }
+
+    #[test]
+    fn many_segments_does_not_panic() {
+        let points = vec![
+            Point::new(0.0, 0.0, 0.5),
+            Point::new(1.0, 2.0, 0.5),
+            Point::new(3.0, 1.0, 0.5),
+        ];
+        let result = catmull_rom(&points, 256);
+        assert!(result.len() > points.len());
+    }
+
+    #[test]
+    fn colinear_points_stay_colinear() {
+        let points = vec![
+            Point::new(0.0, 0.0, 0.5),
+            Point::new(5.0, 0.0, 0.5),
+            Point::new(10.0, 0.0, 0.5),
+        ];
+        let result = catmull_rom(&points, 4);
+        for p in &result {
+            assert!((p.y - 0.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn single_segment_is_just_point_count() {
+        let points = vec![
+            Point::new(0.0, 0.0, 0.5),
+            Point::new(1.0, 1.0, 0.5),
+            Point::new(2.0, 0.0, 0.5),
+        ];
+        let result = catmull_rom(&points, 1);
+        assert_eq!(result.len(), points.len());
+        for p in &result {
+            assert!(p.x >= 0.0 && p.x <= 2.0);
+        }
+    }
 }
