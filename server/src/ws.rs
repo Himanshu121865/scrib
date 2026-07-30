@@ -217,6 +217,9 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
             "stroke-end" => {
                 handle_stroke_end(&state, &room_id, user_id, parsed).await;
             }
+            "clear" => {
+                handle_clear(&state, &room_id).await;
+            }
             "erase" => {
                 handle_erase(&state, &room_id, user_id, parsed).await;
             }
@@ -276,6 +279,15 @@ async fn handle_stroke_end(state: &SharedState, room_id: &str, user_id: UserId, 
         owners: None,
     };
     broadcast(state, room_id, user_id, &msg).await;
+}
+
+async fn handle_clear(state: &SharedState, room_id: &str) {
+    let path = room::room_path(&state.data_dir, room_id);
+    let mut map = state.rooms.write().await;
+    if let Some(room) = map.get_mut(room_id) {
+        room.clear_strokes();
+        room.save(&path).await;
+    }
 }
 
 async fn handle_erase(state: &SharedState, room_id: &str, user_id: UserId, parsed: ClientMsg) {

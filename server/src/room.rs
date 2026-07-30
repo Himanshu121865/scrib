@@ -63,6 +63,11 @@ impl Room {
         self.dirty = true;
     }
 
+    pub fn clear_strokes(&mut self) {
+        self.strokes.clear();
+        self.dirty = true;
+    }
+
     pub fn remove_strokes(&mut self, ids: &[String], user_id: UserId) -> Vec<UserId> {
         let mut owners = Vec::new();
         self.strokes.retain(|s| {

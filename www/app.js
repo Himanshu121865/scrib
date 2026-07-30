@@ -214,6 +214,7 @@ document.getElementById('clear').addEventListener('click', () => {
   S.selectedId = null;
   S.transforming = null;
   resetIncrCache();
+  sendWS(JSON.stringify({type: 'clear'}));
   redraw();
 });
 
