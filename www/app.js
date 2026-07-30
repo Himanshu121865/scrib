@@ -2,11 +2,12 @@ import init from './pkg/scrib.js';
 import { S, canvas, TOOLS, saveState, getPos, undoRedo, initWasmConstants } from './state.js';
 import { redraw, tickAnimation } from './render.js';
 import { cancelErase, resetIncrCache, handleDown, handleMove, handleUp, resize } from './tools.js';
-import { initWS, sendCursor } from './network.js';
+import { initWS, sendCursor, initNetworkClient } from './network.js';
 
 try {
   await init();
   initWasmConstants();
+  initNetworkClient();
 } catch (e) {
   const msg = location.protocol === 'file:'
     ? 'Open via HTTP server (python3 -m http.server 8080), not file://'

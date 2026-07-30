@@ -2,7 +2,10 @@ import { WsClient, ws_init, ws_join, ws_leave, ws_stroke_end, ws_stroke_start, w
 import { S, THROTTLE_CURSOR, saveState } from './state.js';
 import { redraw } from './render.js';
 
-const client = WsClient.new();
+let client = null;
+export function initNetworkClient() {
+  client = WsClient.new();
+}
 
 export function sendWS(json) {
   client.send(json);
