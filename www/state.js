@@ -1,15 +1,26 @@
 import { get_bounds, UndoRedo, epsilon, segments, grid_size, throttle_draw, throttle_cursor, cap_floats, incr_throttle, tools, screen_to_canvas, snap as rust_snap } from './pkg/scrib.js';
 
-export const undoRedo = UndoRedo.new();
+export let undoRedo = null;
+export let EPSILON = 0;
+export let SEGMENTS = 0;
+export let GRID = 0;
+export let THROTTLE_DRAW = 0;
+export let THROTTLE_CURSOR = 0;
+export let TOOLS = null;
+export let CAP_FLOATS = false;
+export let INCR_THROTTLE = 0;
 
-export const EPSILON = epsilon();
-export const SEGMENTS = segments();
-export const GRID = grid_size();
-export const THROTTLE_DRAW = throttle_draw();
-export const THROTTLE_CURSOR = throttle_cursor();
-export const TOOLS = tools();
-export const CAP_FLOATS = cap_floats();
-export const INCR_THROTTLE = incr_throttle();
+export function initWasmConstants() {
+  undoRedo = UndoRedo.new();
+  EPSILON = epsilon();
+  SEGMENTS = segments();
+  GRID = grid_size();
+  THROTTLE_DRAW = throttle_draw();
+  THROTTLE_CURSOR = throttle_cursor();
+  TOOLS = tools();
+  CAP_FLOATS = cap_floats();
+  INCR_THROTTLE = incr_throttle();
+}
 
 export const canvas = document.getElementById('canvas');
 export const ctx = canvas.getContext('2d');

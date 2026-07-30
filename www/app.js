@@ -1,10 +1,19 @@
 import init from './pkg/scrib.js';
-import { S, canvas, TOOLS, saveState, getPos, undoRedo } from './state.js';
+import { S, canvas, TOOLS, saveState, getPos, undoRedo, initWasmConstants } from './state.js';
 import { redraw, tickAnimation } from './render.js';
 import { cancelErase, resetIncrCache, handleDown, handleMove, handleUp, resize } from './tools.js';
 import { initWS, sendCursor } from './network.js';
 
-await init();
+try {
+  await init();
+  initWasmConstants();
+} catch (e) {
+  const msg = location.protocol === 'file:'
+    ? 'Open via HTTP server (python3 -m http.server 8080), not file://'
+    : 'Failed to load WASM — check browser console';
+  document.getElementById('bottomInfo').textContent = msg;
+  console.error('WASM init failed:', e);
+}
 
 function restoreStrokes(json) {
   if (!json) return;
