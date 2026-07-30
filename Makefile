@@ -1,7 +1,7 @@
 .PHONY: all build serve server test lint fmt clean
 
 all: build
-	@pkill -f "scrib-server" 2>/dev/null; pkill -f "http.server" 2>/dev/null; sleep 0.5
+	@-pkill scrib-server 2>/dev/null; fuser -k 8080/tcp 2>/dev/null; sleep 0.5
 	@echo "=== Starting WebSocket server (background) ==="
 	@cargo run -p scrib-server &
 	@sleep 1
