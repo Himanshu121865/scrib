@@ -66,7 +66,7 @@ function processStrokeIncremental(raw) {
 function finalizeStroke() {
   if (!S.currentRaw) return;
   saveState();
-  const obj = finalize_stroke(S.currentRaw, S.currentColor, S.currentSize, S.currentStrokeId || '', S.myId, EPSILON, SEGMENTS);
+  const obj = finalize_stroke(S.currentRaw, S.currentColor, S.currentSize, S.currentStrokeId || '', String(S.myId), EPSILON, SEGMENTS);
   if (!obj || !obj.type) return;
   S.strokes.push(obj);
   if (S.currentStrokeId) {
