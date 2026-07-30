@@ -1,364 +1,129 @@
-use std::collections::HashMap;
-use std::net::SocketAddr;
+mod room;
+mod ws;
+
 use std::sync::Arc;
 
-use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{RwLock, mpsc};
-use tokio_tungstenite::accept_async;
-use tokio_tungstenite::tungstenite::Message;
+use clap::Parser;
+use tokio::net::TcpListener;
+use tokio::sync::RwLock;
+use tokio::time::{interval, Duration};
+use tracing::{info, warn};
+use tracing_subscriber::EnvFilter;
 
-const COLORS: &[&str] = &["#e86a20", "#4488ff", "#ff4444", "#44bb44", "#ffaa22", "#cc66ff", "#22dddd", "#ff66aa"];
+use crate::room::AppState;
 
-type UserId = usize;
-type RoomId = String;
+#[derive(Parser)]
+#[command(name = "scrib-server", version, about = "Multiplayer drawing server")]
+struct Args {
+    #[arg(long, default_value = "0.0.0.0")]
+    addr: String,
 
-struct User {
-    tx: mpsc::UnboundedSender<Message>,
-    color: String,
-}
+    #[arg(long, default_value_t = 9876)]
+    port: u16,
 
-struct Room {
-    users: HashMap<UserId, User>,
-    next_id: UserId,
-    strokes: Vec<StoredStroke>,
-}
+    #[arg(long, default_value = "data")]
+    data_dir: String,
 
-#[derive(Clone)]
-struct StoredStroke {
-    user_id: UserId,
-    data: serde_json::Value,
-}
+    #[arg(long, default_value_t = 50)]
+    max_users: usize,
 
-type Rooms = Arc<RwLock<HashMap<RoomId, Room>>>;
-
-#[derive(Serialize)]
-struct ServerMsg {
-    #[serde(rename = "type")]
-    msg_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<UserId>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    color: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    users: Option<Vec<UserInfo>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    x: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    y: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    strokes: Option<Vec<StrokeEntry>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ids: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    owners: Option<Vec<UserId>>,
-}
-
-#[derive(Clone, Serialize)]
-struct StrokeEntry {
-    user_id: UserId,
-    stroke: serde_json::Value,
-}
-
-#[derive(Clone, Serialize)]
-struct UserInfo {
-    id: UserId,
-    color: String,
-}
-
-#[derive(Deserialize)]
-struct ClientMsg {
-    #[serde(rename = "type")]
-    msg_type: String,
-    room: Option<String>,
-    data: Option<serde_json::Value>,
-    x: Option<f64>,
-    y: Option<f64>,
-    ids: Option<Vec<String>>,
-}
-
-async fn handle_connection(stream: TcpStream, addr: SocketAddr, rooms: Rooms) {
-    let ws = match accept_async(stream).await {
-        Ok(ws) => ws,
-        Err(e) => {
-            eprintln!("WS accept error from {addr}: {e}");
-            return;
-        }
-    };
-
-    let (mut ws_tx, mut ws_rx) = ws.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-
-    let join_msg = match ws_rx.next().await {
-        Some(Ok(Message::Text(text))) => text,
-        _ => return,
-    };
-
-    let parsed: ClientMsg = match serde_json::from_str(&join_msg) {
-        Ok(m) => m,
-        Err(_) => return,
-    };
-
-    if parsed.msg_type != "join" {
-        return;
-    }
-
-    let room_id = parsed.room.unwrap_or_else(|| "default".to_string());
-
-    let (user_id, user_color, user_list, existing_strokes) = {
-        let mut rooms = rooms.write().await;
-        let room = rooms.entry(room_id.clone()).or_insert(Room {
-            users: HashMap::new(),
-            next_id: 0,
-            strokes: Vec::new(),
-        });
-        let id = room.next_id;
-        room.next_id += 1;
-        let color = COLORS[id % COLORS.len()].to_string();
-        room.users.insert(
-            id,
-            User {
-                tx: tx.clone(),
-                color: color.clone(),
-            },
-        );
-        let user_list: Vec<UserInfo> = room
-            .users
-            .iter()
-            .map(|(uid, u)| UserInfo {
-                id: *uid,
-                color: u.color.clone(),
-            })
-            .collect();
-        for (idx, stored) in room.strokes.iter_mut().enumerate() {
-            if let serde_json::Value::Object(ref mut map) = stored.data {
-                if !map.contains_key("id") {
-                    let sid = format!("srv_{}_{}", stored.user_id, idx);
-                    map.insert("id".to_string(), serde_json::Value::String(sid));
-                }
-            }
-        }
-        let existing_strokes: Vec<StrokeEntry> = room
-            .strokes
-            .iter()
-            .map(|s| StrokeEntry {
-                user_id: s.user_id,
-                stroke: s.data.clone(),
-            })
-            .collect();
-        (id, color, user_list, existing_strokes)
-    };
-
-    let init = ServerMsg {
-        msg_type: "init".to_string(),
-        id: Some(user_id),
-        color: Some(user_color.clone()),
-        users: Some(user_list.clone()),
-        data: None,
-        x: None,
-        y: None,
-        strokes: Some(existing_strokes),
-        ids: None,
-        owners: None,
-    };
-    let _ = ws_tx
-        .send(Message::Text(serde_json::to_string(&init).unwrap()))
-        .await;
-
-    let join_broadcast = ServerMsg {
-        msg_type: "join".to_string(),
-        id: Some(user_id),
-        color: Some(user_color.clone()),
-        users: None,
-        data: None,
-        x: None,
-        y: None,
-        strokes: None,
-        ids: None,
-        owners: None,
-    };
-    broadcast(&rooms, &room_id, user_id, &join_broadcast).await;
-
-    println!("User {user_id} ({user_color}) joined room '{room_id}' [{addr}]");
-
-    let forward = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            if ws_tx.send(msg).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    while let Some(msg) = ws_rx.next().await {
-        match msg {
-            Ok(Message::Text(text)) => {
-                let parsed: ClientMsg = match serde_json::from_str(&text) {
-                    Ok(m) => m,
-                    Err(_) => continue,
-                };
-
-                match parsed.msg_type.as_str() {
-                    "stroke" | "stroke-start" | "stroke-update" | "shape-update" => {
-                        let server_msg = ServerMsg {
-                            msg_type: parsed.msg_type.clone(),
-                            id: Some(user_id),
-                            color: None,
-                            users: None,
-                            data: parsed.data,
-                            x: None,
-                            y: None,
-                            strokes: None,
-                            ids: None,
-                            owners: None,
-                        };
-                        broadcast(&rooms, &room_id, user_id, &server_msg).await;
-                    }
-                    "stroke-end" => {
-                        if let Some(ref data) = parsed.data {
-                            let mut actual_stroke = data.get("stroke")
-                                .and_then(|v| if v.is_null() { None } else { Some(v.clone()) })
-                                .unwrap_or_else(|| data.clone());
-                            if let serde_json::Value::Object(ref mut map) = actual_stroke {
-                                if !map.contains_key("id") {
-                                    let sid = format!("srv_{}_{}", user_id,
-                                        std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap_or_default().as_nanos());
-                                    map.insert("id".to_string(), serde_json::Value::String(sid));
-                                }
-                            }
-                            let mut rooms_lock = rooms.write().await;
-                            if let Some(room) = rooms_lock.get_mut(&room_id) {
-                                room.strokes.push(StoredStroke {
-                                    user_id,
-                                    data: actual_stroke,
-                                });
-                            }
-                            drop(rooms_lock);
-                        }
-                        let server_msg = ServerMsg {
-                            msg_type: "stroke-end".to_string(),
-                            id: Some(user_id),
-                            color: None,
-                            users: None,
-                            data: parsed.data,
-                            x: None,
-                            y: None,
-                            strokes: None,
-                            ids: None,
-                            owners: None,
-                        };
-                        broadcast(&rooms, &room_id, user_id, &server_msg).await;
-                    }
-                    "erase" => {
-                        let owners: Vec<UserId> = if let Some(ref ids) = parsed.ids {
-                            let mut rooms_lock = rooms.write().await;
-                            if let Some(room) = rooms_lock.get_mut(&room_id) {
-                                let mut removed_owners = Vec::new();
-                                let before = room.strokes.len();
-                                room.strokes.retain(|s| {
-                                    let sid = s.data.get("id").and_then(|v| v.as_str());
-                                    let matched = s.user_id == user_id && ids.iter().any(|id| Some(id.as_str()) == sid);
-                                    if matched {
-                                        removed_owners.push(s.user_id);
-                                        eprintln!("  erase: removing stroke id={:?} owner={}", sid, s.user_id);
-                                    }
-                                    !matched
-                                });
-                                eprintln!("erase from user {user_id}: ids={ids:?}, removed={}, owners={:?}", before - room.strokes.len(), removed_owners);
-                                removed_owners
-                            } else { Vec::new() }
-                        } else { Vec::new() };
-                        let server_msg = ServerMsg {
-                            msg_type: "erase".to_string(),
-                            id: Some(user_id),
-                            color: None,
-                            users: None,
-                            data: None,
-                            x: None,
-                            y: None,
-                            strokes: None,
-                            ids: parsed.ids.clone(),
-                            owners: if owners.is_empty() { None } else { Some(owners) },
-                        };
-                        broadcast(&rooms, &room_id, user_id, &server_msg).await;
-                    }
-                    "cursor" => {
-                        let server_msg = ServerMsg {
-                            msg_type: "cursor".to_string(),
-                            id: Some(user_id),
-                            color: Some(user_color.clone()),
-                            users: None,
-                            data: None,
-                            x: parsed.x,
-                            y: parsed.y,
-                            strokes: None,
-                            ids: None,
-                            owners: None,
-                        };
-                        broadcast(&rooms, &room_id, user_id, &server_msg).await;
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Message::Close(_)) | Err(_) => break,
-            _ => {}
-        }
-    }
-
-    forward.abort();
-    {
-        let mut rooms = rooms.write().await;
-        if let Some(room) = rooms.get_mut(&room_id) {
-            room.users.remove(&user_id);
-            room.strokes.retain(|s| s.user_id != user_id);
-            if room.users.is_empty() {
-                rooms.remove(&room_id);
-                println!("Room '{room_id}' deleted (empty)");
-            }
-        }
-    }
-    let leave_msg = ServerMsg {
-        msg_type: "leave".to_string(),
-        id: Some(user_id),
-        color: None,
-        users: None,
-        data: None,
-        x: None,
-        y: None,
-        strokes: None,
-        ids: None,
-        owners: None,
-    };
-    broadcast(&rooms, &room_id, user_id, &leave_msg).await;
-    println!("User {user_id} left room '{room_id}'");
-}
-
-async fn broadcast(rooms: &Rooms, room_id: &str, sender_id: UserId, msg: &ServerMsg) {
-    let text = serde_json::to_string(msg).unwrap();
-    let rooms_lock = rooms.read().await;
-    if let Some(room) = rooms_lock.get(room_id) {
-        for (&uid, user) in &room.users {
-            if uid != sender_id {
-                let _ = user.tx.send(Message::Text(text.clone()));
-            }
-        }
-    }
+    #[arg(long, default_value_t = 30)]
+    save_interval: u64,
 }
 
 #[tokio::main]
 async fn main() {
-    let addr = "0.0.0.0:9876";
-    let listener = TcpListener::bind(addr).await.expect("Failed to bind");
-    println!("scrib-server listening on ws://{addr}");
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .init();
 
-    let rooms: Rooms = Arc::new(RwLock::new(HashMap::new()));
+    let args = Args::parse();
+    let bind = format!("{}:{}", args.addr, args.port);
+    let listener = TcpListener::bind(&bind).await.expect("Failed to bind");
+    info!("listening on ws://{bind}");
 
-    while let Ok((stream, addr)) = listener.accept().await {
-        let rooms = rooms.clone();
-        tokio::spawn(handle_connection(stream, addr, rooms));
+    tokio::fs::create_dir_all(&args.data_dir)
+        .await
+        .expect("Failed to create data directory");
+
+    let save_interval = args.save_interval;
+    let state = Arc::new(AppState {
+        rooms: Arc::new(RwLock::new(room::RoomMap::new())),
+        data_dir: args.data_dir.into(),
+        max_users: args.max_users,
+    });
+
+    // --- periodic background save + stats ---
+    let save_state = state.clone();
+    let save_handle = tokio::spawn(async move {
+        let mut tick = interval(Duration::from_secs(save_interval));
+        loop {
+            tick.tick().await;
+            let mut map = save_state.rooms.write().await;
+            let room_count = map.len();
+            let mut total_users = 0;
+            let mut total_strokes = 0;
+            let mut saved = 0;
+            for (room_id, room) in map.iter_mut() {
+                total_users += room.users.len();
+                total_strokes += room.strokes.len();
+                let path = room::room_path(&save_state.data_dir, room_id);
+                if room.dirty {
+                    room.save(&path).await;
+                    saved += 1;
+                }
+            }
+            if saved > 0 || room_count > 0 {
+                info!("stats: {room_count} room(s), {total_users} user(s), {total_strokes} stroke(s), {saved} saved");
+            }
+        }
+    });
+
+    // --- shutdown signal ---
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        info!("shutting down...");
+        let _ = shutdown_tx.send(());
+    });
+
+    // --- accept loop ---
+    loop {
+        tokio::select! {
+            result = listener.accept() => {
+                match result {
+                    Ok((stream, addr)) => {
+                        let state = state.clone();
+                        tokio::spawn(ws::handle_connection(stream, addr, state));
+                    }
+                    Err(e) => warn!("accept error: {e}"),
+                }
+            }
+            _ = &mut shutdown_rx => break,
+        }
     }
+
+    // --- graceful shutdown ---
+    save_handle.abort();
+
+    let mut saved = 0;
+    {
+        let mut map = state.rooms.write().await;
+        let paths: Vec<_> = map.keys().cloned().collect();
+        for room_id in &paths {
+            if let Some(room) = map.get_mut(room_id) {
+                if room.dirty {
+                    let path = room::room_path(&state.data_dir, room_id);
+                    room.save(&path).await;
+                    saved += 1;
+                }
+            }
+        }
+    }
+    if saved > 0 {
+        info!("saved {saved} room(s) on shutdown");
+    }
+
+    info!("server stopped");
 }
