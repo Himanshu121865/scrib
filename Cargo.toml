@@ -11,6 +11,16 @@ crate-type = ["lib", "cdylib"]
 
 [dependencies]
 wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+    "CanvasRenderingContext2d",
+    "HtmlCanvasElement",
+    "Path2d",
+    "WebSocket",
+    "MessageEvent",
+    "CloseEvent",
+    "BinaryType",
+] }
 
 [features]
-wasm = ["wasm-bindgen"]
+wasm = ["wasm-bindgen", "js-sys", "web-sys"]
