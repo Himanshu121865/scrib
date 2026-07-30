@@ -2,7 +2,7 @@ import init from './pkg/scrib.js';
 import { S, canvas, TOOLS, saveState, getPos, undoRedo, initWasmConstants } from './state.js';
 import { redraw, tickAnimation } from './render.js';
 import { cancelErase, resetIncrCache, handleDown, handleMove, handleUp, resize } from './tools.js';
-import { initWS, sendCursor, initNetworkClient } from './network.js';
+import { sendWS, initWS, sendCursor, initNetworkClient } from './network.js';
 
 try {
   await init();
@@ -214,7 +214,7 @@ document.getElementById('clear').addEventListener('click', () => {
   S.selectedId = null;
   S.transforming = null;
   resetIncrCache();
-  sendWS(JSON.stringify({type: 'clear'}));
+  try { sendWS(JSON.stringify({type: 'clear'})); } catch (_) {}
   redraw();
 });
 
