@@ -23,6 +23,18 @@ function drawCursor(c, cxt) {
 }
 
 function drawSelection() {
+  if (S.selectRect) {
+    const rx1 = Math.min(S.selectRect.x1, S.selectRect.x2);
+    const ry1 = Math.min(S.selectRect.y1, S.selectRect.y2);
+    const rx2 = Math.max(S.selectRect.x1, S.selectRect.x2);
+    const ry2 = Math.max(S.selectRect.y1, S.selectRect.y2);
+    ctx.strokeStyle = '#4488ff';
+    ctx.lineWidth = 1.5 / S.camZoom;
+    ctx.setLineDash([6 / S.camZoom, 4 / S.camZoom]);
+    ctx.strokeRect(rx1, ry1, rx2 - rx1, ry2 - ry1);
+    ctx.setLineDash([]);
+    return;
+  }
   if (!S.selectedId) return;
   const sel = S.strokes.find(s => s.id === S.selectedId);
   if (!sel) { S.selectedId = null; return; }

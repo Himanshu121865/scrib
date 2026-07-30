@@ -208,6 +208,8 @@ function selectHandleDown(x, y) {
     if (idx >= 0) {
       S.selectedId = S.strokes[idx].id;
       redraw();
+    } else {
+      S.selectRect = { x1: x, y1: y, x2: x, y2: y };
     }
     return;
   }
@@ -235,11 +237,18 @@ function selectHandleDown(x, y) {
     S.selectedId = S.strokes[idx].id;
   } else {
     S.selectedId = null;
+    S.selectRect = { x1: x, y1: y, x2: x, y2: y };
   }
   redraw();
 }
 
 function selectHandleMove(x, y) {
+  if (S.selectRect) {
+    S.selectRect.x2 = x;
+    S.selectRect.y2 = y;
+    redraw();
+    return;
+  }
   if (!S.transforming) return;
   const sel = findStrokeById(S.selectedId);
   if (!sel) return;
@@ -263,6 +272,29 @@ function selectHandleMove(x, y) {
 }
 
 function selectHandleUp() {
+  if (S.selectRect) {
+    const rx1 = Math.min(S.selectRect.x1, S.selectRect.x2);
+    const ry1 = Math.min(S.selectRect.y1, S.selectRect.y2);
+    const rx2 = Math.max(S.selectRect.x1, S.selectRect.x2);
+    const ry2 = Math.max(S.selectRect.y1, S.selectRect.y2);
+    if (Math.abs(rx2 - rx1) > 2 || Math.abs(ry2 - ry1) > 2) {
+      for (let i = S.strokes.length - 1; i >= 0; i--) {
+        const s = S.strokes[i];
+        if (S.toErase.has(i)) continue;
+        const b = getBounds(s);
+        if (b.x1 < rx2 && b.x2 > rx1 && b.y1 < ry2 && b.y2 > ry1) {
+          S.selectedId = s.id;
+          break;
+        }
+      }
+    } else {
+      const idx = hitStroke(S.selectRect.x1, S.selectRect.y1);
+      S.selectedId = idx >= 0 ? S.strokes[idx].id : null;
+    }
+    S.selectRect = null;
+    redraw();
+    return;
+  }
   if (S.transforming) {
     const sel = findStrokeById(S.selectedId);
     if (S.transforming.didMove) {
@@ -275,6 +307,19 @@ function selectHandleUp() {
     S.transforming = null;
     redraw();
   }
+}
+
+export function deleteSelected() {
+  if (S.selectedId === null) return;
+  const idx = S.strokes.findIndex(s => s.id === S.selectedId);
+  if (idx < 0) return;
+  const s = S.strokes[idx];
+  if (s.id) sendWS(JSON.stringify({type: 'erase', ids: [s.id]}));
+  S.strokes.splice(idx, 1);
+  S.selectedId = null;
+  S.transforming = null;
+  saveState();
+  redraw();
 }
 
 export function resize() {

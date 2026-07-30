@@ -1,7 +1,7 @@
 import init from './pkg/scrib.js';
 import { S, canvas, TOOLS, saveState, getPos, undoRedo, initWasmConstants } from './state.js';
 import { redraw, tickAnimation } from './render.js';
-import { cancelErase, resetIncrCache, handleDown, handleMove, handleUp, resize } from './tools.js';
+import { cancelErase, resetIncrCache, handleDown, handleMove, handleUp, resize, deleteSelected } from './tools.js';
 import { sendWS, initWS, sendCursor, initNetworkClient } from './network.js';
 
 try {
@@ -238,6 +238,7 @@ document.addEventListener('keydown', (e) => {
   else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) { undo(); }
   else if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); copySelected(); }
   else if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); pasteClipboard(); }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && S.selectedId) { deleteSelected(); }
 });
 document.addEventListener('keyup', (e) => {
   if (e.key === ' ') S.spaceDown = false;

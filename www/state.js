@@ -43,6 +43,7 @@ export const S = {
   currentTool: 'draw',
   selectedId: null,
   transforming: null,
+  selectRect: null,
 
   camX: 0, camY: 0, camZoom: 1,
   panning: false, panBtn: -1,
