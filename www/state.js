@@ -1,8 +1,6 @@
-import { get_bounds, UndoRedo, epsilon, segments, grid_size, throttle_draw, throttle_cursor, cap_floats, incr_throttle, tools, screen_to_canvas, snap as rust_snap } from './pkg/scrib.js';
+import { get_bounds, UndoRedo, epsilon, segments, grid_size, throttle_draw, throttle_cursor, cap_floats, incr_throttle, tools, screen_to_canvas, snap as rust_snap, velocity_influence } from './pkg/scrib.js';
 
 export let undoRedo = null;
-export let EPSILON = 0;
-export let SEGMENTS = 0;
 export let GRID = 0;
 export let THROTTLE_DRAW = 0;
 export let THROTTLE_CURSOR = 0;
@@ -12,8 +10,6 @@ export let INCR_THROTTLE = 0;
 
 export function initWasmConstants() {
   undoRedo = UndoRedo.new();
-  EPSILON = epsilon();
-  SEGMENTS = segments();
   GRID = grid_size();
   THROTTLE_DRAW = throttle_draw();
   THROTTLE_CURSOR = throttle_cursor();
@@ -41,7 +37,7 @@ export const S = {
   currentColor: '#eee',
   currentSize: undefined,
   currentTool: 'draw',
-  selectedId: null,
+  selectedIds: [],
   transforming: null,
   selectRect: null,
 
@@ -71,6 +67,11 @@ export const S = {
   liveShapes: {},
   cachedCenterline: null,
   clipboard: null,
+  modKey: false,
+  simplifyEpsilon: 0.5,
+  smoothSegments: 6,
+  velInfluence: 0.75,
+  brushCollapsed: false,
 };
 
 export function saveState() {
@@ -91,7 +92,7 @@ export function getPos(e) {
 export function snap(val) { return rust_snap(val, S.showGrid); }
 
 export function getBounds(s) {
-  const b = get_bounds(s.type, s.x||0, s.y||0, s.x2||0, s.y2||0, s.size, s.data||[]);
+  const b = get_bounds(s.type, s.x1||s.x||0, s.y1||s.y||0, s.x2||0, s.y2||0, s.size, s.data||[]);
   return { x1: b[0], y1: b[1], x2: b[2], y2: b[3] };
 }
 

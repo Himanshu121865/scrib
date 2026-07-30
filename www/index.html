@@ -9,14 +9,28 @@
 <body>
 
 <div id="leftPanel">
-  <button class="tool-btn" id="toolselect" title="Select (S)"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l5 14 3-5 5-3L2 2z"/><path d="M11 11l5 5"/></svg></button>
-  <button class="tool-btn active" id="tooldraw" title="Pen (D)"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2a2.2 2.2 0 0 1 3 3L6 16l-4 1 1-4Z"/><path d="m12 4 3 3"/></svg></button>
-  <button class="tool-btn" id="tooleraser" title="Eraser (E)"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13l4 4 8-8-4-4-8 8z"/><path d="m9.5 5.5 3 3"/></svg></button>
+  <button class="tool-btn" id="toolselect" title="Select (S)">
+    <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l5 14 3-5 5-3L2 2z"/><path d="M11 11l5 5"/></svg>
+  </button>
+  <button class="tool-btn active" id="tooldraw" title="Pen (D)">
+    <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2a2.2 2.2 0 0 1 3 3L6 16l-4 1 1-4Z"/><path d="m12 4 3 3"/></svg>
+  </button>
+  <button class="tool-btn" id="tooleraser" title="Eraser (E)">
+    <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13l4 4 8-8-4-4-8 8z"/><path d="m9.5 5.5 3 3"/></svg>
+  </button>
   <div class="sep"></div>
-  <button class="tool-btn" id="toolrect" title="Rectangle (R)">□</button>
-  <button class="tool-btn" id="toolcircle" title="Circle (C)">○</button>
-  <button class="tool-btn" id="toolline" title="Line (L)">╱</button>
-  <button class="tool-btn" id="toolarrow" title="Arrow (A)">→</button>
+  <button class="tool-btn" id="toolrect" title="Rectangle (R)">
+    <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="12" height="12" rx="1"/></svg>
+  </button>
+  <button class="tool-btn" id="toolcircle" title="Circle (C)">
+    <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9" r="6"/></svg>
+  </button>
+  <button class="tool-btn" id="toolline" title="Line (L)">
+    <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 16 16 2"/></svg>
+  </button>
+  <button class="tool-btn" id="toolarrow" title="Arrow (A)">
+    <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9h14"/><path d="m11 4 5 5-5 5"/></svg>
+  </button>
 </div>
 
 <div id="topBar">
@@ -25,8 +39,12 @@
   <div class="sep"></div>
   <button id="clear">Clear</button>
   <div class="sep"></div>
-  <button id="gridToggle" title="Grid (G)"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="16" height="16"/><line x1="2" y1="8" x2="18" y2="8"/><line x1="2" y1="14" x2="18" y2="14"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="14" y1="2" x2="14" y2="18"/></svg></button>
-  <button id="bgToggle" class="tog-on" title="Toggle dark/light mode"><svg id="bgIcon" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 10.79A8 8 0 1 1 9.21 3 6 6 0 0 0 17 10.79z"/></svg></button>
+  <button id="gridToggle" title="Grid (G)">
+    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="16" height="16"/><line x1="2" y1="8" x2="18" y2="8"/><line x1="2" y1="14" x2="18" y2="14"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="14" y1="2" x2="14" y2="18"/></svg>
+  </button>
+  <button id="bgToggle" class="tog-on" title="Dark / Light">
+    <svg id="bgIcon" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 10.79A8 8 0 1 1 9.21 3 6 6 0 0 0 17 10.79z"/></svg>
+  </button>
   <div class="sep"></div>
   <button class="icon-btn" id="zoomOut" title="Zoom out">−</button>
   <span class="zoom-label" id="zoomLabel">100%</span>
@@ -37,29 +55,52 @@
 </div>
 
 <div id="bottomBar">
-  <div class="swatches">
-    <div class="swatch" data-color="#222" style="background:#222"></div>
-    <div class="swatch" data-color="#e33" style="background:#e33"></div>
-    <div class="swatch" data-color="#33e" style="background:#33e"></div>
-    <div class="swatch" data-color="#3a3" style="background:#3a3"></div>
-    <div class="swatch" data-color="#e83" style="background:#e83"></div>
-    <div class="swatch" data-color="#eee" style="background:#eee;border:1px solid #555"></div>
-    <input type="color" id="customColor" class="swatch-picker" value="#e86a20">
-    <div id="customColorBtn" class="swatch-picker-btn" title="Custom color">+</div>
+  <div id="bottomRow1">
+    <button id="brushToggle" title="Toggle brush controls">▼</button>
+    <div class="swatches">
+      <div class="swatch" data-color="#222" style="background:#222"></div>
+      <div class="swatch" data-color="#e33" style="background:#e33"></div>
+      <div class="swatch" data-color="#33e" style="background:#33e"></div>
+      <div class="swatch" data-color="#3a3" style="background:#3a3"></div>
+      <div class="swatch" data-color="#e83" style="background:#e83"></div>
+      <div class="swatch" data-color="#eee" style="background:#eee;border:1px solid #555"></div>
+      <input type="color" id="customColor" class="swatch-picker" value="#e86a20">
+      <div id="customColorBtn" class="swatch-picker-btn" title="Custom color">+</div>
+    </div>
+    <span id="bottomInfo">scrib · scroll zoom · middle-drag pan</span>
   </div>
-  <div class="size-wrap">
-    <label>Size</label>
-    <div id="sizePreview" class="size-preview"></div>
-    <input type="range" id="sizeSlider" min="1" max="20" step="0.5" value="10">
-    <span id="sizeLabel">10.0</span>
+  <div id="bottomRow2">
+    <div class="brush-group">
+      <div class="brush-control">
+        <div class="size-preview-wrap"><div id="sizePreview" class="size-preview"></div></div>
+        <label>Size</label>
+        <input type="range" id="sizeSlider" min="1" max="20" step="0.5" value="10">
+        <span class="val" id="sizeLabel">10</span>
+      </div>
+      <div class="brush-control">
+        <label title="Simplify — lower = more detail">Simplify</label>
+        <input type="range" id="simplifySlider" min="0.1" max="5" step="0.1" value="0.5">
+        <span class="val" id="simplifyLabel">0.5</span>
+      </div>
+      <div class="brush-control">
+        <label title="Smooth — higher = smoother">Smooth</label>
+        <input type="range" id="smoothSlider" min="2" max="20" step="1" value="6">
+        <span class="val" id="smoothLabel">6</span>
+      </div>
+      <div class="brush-control">
+        <label title="Velocity — speed thins stroke">Velocity</label>
+        <input type="range" id="velSlider" min="0" max="100" step="5" value="75">
+        <span class="val" id="velLabel">75%</span>
+      </div>
+    </div>
   </div>
-  <span id="bottomInfo">scrib · scroll zoom · middle-drag pan</span>
 </div>
 
 <div id="shortcutsOverlay">
   <div id="shortcutsPanel">
     <h2>Keyboard Shortcuts</h2>
     <div class="row"><span>Select tool</span><span class="keys"><kbd>S</kbd></span></div>
+    <div class="row"><span>Multi‑select</span><span class="keys"><kbd>Shift</kbd>+click</span></div>
     <div class="row"><span>Delete selected</span><span class="keys"><kbd>Del</kbd></span></div>
     <div class="row"><span>Pen tool</span><span class="keys"><kbd>D</kbd></span></div>
     <div class="row"><span>Eraser</span><span class="keys"><kbd>E</kbd></span></div>
@@ -69,18 +110,18 @@
     <div class="row"><span>Arrow</span><span class="keys"><kbd>A</kbd></span></div>
     <div class="row"><span>Cancel tool</span><span class="keys"><kbd>Esc</kbd></span></div>
     <div class="row"><span>Undo</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>Z</kbd></span></div>
-    <div class="row"><span>Redo</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd></span></div>
+    <div class="row"><span>Redo</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></span></div>
     <div class="row"><span>Copy</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>C</kbd></span></div>
     <div class="row"><span>Paste</span><span class="keys"><kbd>Ctrl</kbd>+<kbd>V</kbd></span></div>
     <div class="row"><span>Toggle grid</span><span class="keys"><kbd>G</kbd></span></div>
-    <div class="row"><span>Pan (hold + drag)</span><span class="keys"><kbd>Space</kbd> + drag</span></div>
+    <div class="row"><span>Pan</span><span class="keys"><kbd>Space</kbd> + drag</span></div>
     <div class="row"><span>Zoom</span><span class="keys">Scroll wheel</span></div>
     <div class="row"><span>Pan</span><span class="keys">Middle‑click + drag</span></div>
   </div>
 </div>
 
 <canvas id="canvas"></canvas>
-<canvas id="cursorCanvas" style="position:fixed;top:44px;left:48px;right:0;bottom:52px;pointer-events:none;z-index:5;background:transparent;"></canvas>
+<canvas id="cursorCanvas" style="position:fixed;top:44px;left:48px;right:0;pointer-events:none;z-index:5;background:transparent;"></canvas>
 
 <script type="module" src="app.js"></script>
 </body>

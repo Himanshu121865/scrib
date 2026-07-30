@@ -33,9 +33,9 @@ impl Stroke {
         pipeline(&self.points, self.simplify_epsilon, self.smooth_segments)
     }
 
-    pub fn process_with_widths(&self, base_size: f64) -> Vec<[f64; 3]> {
+    pub fn process_with_widths(&self, base_size: f64, vel_influence: f64) -> Vec<[f64; 3]> {
         let pts = self.process();
-        let widths = compute_widths(&pts, base_size);
+        let widths = compute_widths(&pts, base_size, vel_influence);
         pts.iter()
             .zip(widths.iter())
             .map(|(p, w)| [p.x, p.y, *w])
@@ -60,7 +60,7 @@ pub fn pipeline(points: &[Point], epsilon: f64, segments: usize) -> Vec<Point> {
     smooth::catmull_rom(&simplified, segments)
 }
 
-pub fn compute_widths(points: &[Point], base_size: f64) -> Vec<f64> {
+pub fn compute_widths(points: &[Point], base_size: f64, vel_influence: f64) -> Vec<f64> {
     let n = points.len();
     if n < 2 {
         return vec![base_size; n];
@@ -91,7 +91,7 @@ pub fn compute_widths(points: &[Point], base_size: f64) -> Vec<f64> {
             0.0
         };
         let p = points[i].pressure;
-        let width = base_size * (0.15 + 0.85 * p * (1.0 - 0.75 * speed));
+        let width = base_size * (0.15 + 0.85 * p * (1.0 - vel_influence * speed));
         widths.push(width);
     }
 
@@ -146,7 +146,7 @@ mod tests {
             Point::new(1.0, 0.0, 0.5),
             Point::new(2.0, 0.0, 0.5),
         ];
-        let widths = compute_widths(&pts, 2.0);
+        let widths = compute_widths(&pts, 2.0, 0.75);
         assert_eq!(widths.len(), 3);
         assert!(widths.iter().all(|w| *w > 0.0));
     }
@@ -157,7 +157,7 @@ mod tests {
         s.add_point(Point::new(0.0, 0.0, 0.5));
         s.add_point(Point::new(5.0, 5.0, 0.5));
         s.add_point(Point::new(10.0, 0.0, 0.5));
-        let out = s.process_with_widths(2.0);
+        let out = s.process_with_widths(2.0, 0.75);
         assert!(out.len() > 3);
         assert_eq!(out[0].len(), 3);
     }
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn zero_base_size_still_positive() {
         let pts = vec![Point::new(0.0, 0.0, 1.0), Point::new(1.0, 0.0, 1.0)];
-        let widths = compute_widths(&pts, 0.0);
+        let widths = compute_widths(&pts, 0.0, 0.75);
         assert_eq!(widths.len(), 2);
         assert!(widths.iter().all(|w| *w >= 0.0));
     }
@@ -177,7 +177,7 @@ mod tests {
             Point::new(10.0, 0.0, 0.0),
             Point::new(20.0, 0.0, 0.0),
         ];
-        let widths = compute_widths(&pts, 10.0);
+        let widths = compute_widths(&pts, 10.0, 0.75);
         for w in &widths {
             assert!(*w < 10.0);
             assert!(*w >= 0.0);
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn full_pressure_produces_thick_stroke() {
         let pts: Vec<Point> = (0..20).map(|_| Point::new(0.0, 0.0, 1.0)).collect();
-        let widths = compute_widths(&pts, 10.0);
+        let widths = compute_widths(&pts, 10.0, 0.75);
         let max_w = widths.iter().copied().fold(0.0, f64::max);
         assert!(max_w > 8.0);
     }
@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn width_taper_at_ends() {
         let pts: Vec<Point> = (0..20).map(|i| Point::new(i as f64, 0.0, 1.0)).collect();
-        let widths = compute_widths(&pts, 10.0);
+        let widths = compute_widths(&pts, 10.0, 0.75);
         assert!(widths[0] < widths[5]);
         assert!(widths[widths.len() - 1] < widths[widths.len() - 6]);
     }
@@ -207,7 +207,7 @@ mod tests {
             Point::new(100.0, 0.0, 1.0),
             Point::new(200.0, 0.0, 1.0),
         ];
-        let widths = compute_widths(&pts, 10.0);
+        let widths = compute_widths(&pts, 10.0, 0.75);
         let min_w = widths.iter().copied().fold(f64::INFINITY, f64::min);
         assert!(min_w > 0.0);
         assert!(min_w < 10.0);
@@ -222,7 +222,7 @@ mod tests {
             let x = i as f64 * 0.1;
             s.add_point(Point::new(x, (x * 0.5).sin(), 0.5));
         }
-        let out = s.process_with_widths(4.0);
+        let out = s.process_with_widths(4.0, 0.75);
         assert!(out.len() > 200);
     }
 
@@ -240,7 +240,7 @@ mod tests {
         // points 1,2 double-tapered: widths[1] < widths[0] (broken)
         // With fix: taper=min(3,2)=2, fwd=[0,1] rev=[3,2] — no overlap
         let pts: Vec<Point> = (0..4).map(|_| Point::new(0.0, 0.0, 1.0)).collect();
-        let widths = compute_widths(&pts, 10.0);
+        let widths = compute_widths(&pts, 10.0, 0.75);
         assert_eq!(widths.len(), 4);
         assert!(widths[1] > widths[0], "mid should be thicker than tip");
         assert!(widths[2] > widths[3], "mid should be thicker than tip");
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn taper_symmetric_both_ends() {
         let pts: Vec<Point> = (0..10).map(|_| Point::new(0.0, 0.0, 1.0)).collect();
-        let widths = compute_widths(&pts, 10.0);
+        let widths = compute_widths(&pts, 10.0, 0.75);
         assert!((widths[0] / widths[widths.len() - 1] - 1.0).abs() < 0.01);
         assert!((widths[1] / widths[widths.len() - 2] - 1.0).abs() < 0.01);
         assert!((widths[2] / widths[widths.len() - 3] - 1.0).abs() < 0.01);
@@ -262,8 +262,8 @@ mod tests {
     fn pressure_zero_is_thinner_than_full() {
         let pts0: Vec<Point> = (0..5).map(|i| Point::new(i as f64, 0.0, 0.0)).collect();
         let pts1: Vec<Point> = (0..5).map(|i| Point::new(i as f64, 0.0, 1.0)).collect();
-        let w0 = compute_widths(&pts0, 10.0);
-        let w1 = compute_widths(&pts1, 10.0);
+        let w0 = compute_widths(&pts0, 10.0, 0.75);
+        let w1 = compute_widths(&pts1, 10.0, 0.75);
         for i in 0..5 {
             assert!(
                 w0[i] < w1[i],

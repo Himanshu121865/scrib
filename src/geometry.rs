@@ -262,8 +262,8 @@ pub fn hit_shape(
             let cx = (x1 + x2) / 2.0;
             let cy = (y1 + y2) / 2.0;
             let r = (x2 - x1).hypot(y2 - y1) / 2.0;
-            let d = (px - cx).hypot(py - cy) - r;
-            d.abs() <= t
+            let dist = (px - cx).hypot(py - cy);
+            dist <= r || (dist - r).abs() <= t
         }
         "line" | "arrow" => dist_to_segment_sq(px, py, x1, y1, x2, y2) <= t * t,
         "dot" => (px - x1).hypot(py - y1) <= t,
@@ -395,8 +395,8 @@ mod tests {
     }
 
     #[test]
-    fn hit_shape_circle_center_is_not_hit() {
-        assert!(!hit_shape(5.0, 5.0, "circle", 0.0, 0.0, 10.0, 10.0, 2.0));
+    fn hit_shape_circle_center_is_hit() {
+        assert!(hit_shape(5.0, 5.0, "circle", 0.0, 0.0, 10.0, 10.0, 2.0));
     }
 
     #[test]

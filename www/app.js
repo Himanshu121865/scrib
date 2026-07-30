@@ -29,7 +29,7 @@ function undo() {
   if (S.shaping) { S.shaping = false; S.shapeStart = null; }
   if (S.erasing) cancelErase();
   resetIncrCache();
-  S.selectedId = null; S.transforming = null;
+  S.selectedIds = []; S.transforming = null;
   const prev = undoRedo.undo(JSON.stringify(S.strokes));
   restoreStrokes(prev);
   redraw();
@@ -41,7 +41,7 @@ function redo() {
   if (S.shaping) { S.shaping = false; S.shapeStart = null; }
   if (S.erasing) cancelErase();
   resetIncrCache();
-  S.selectedId = null; S.transforming = null;
+  S.selectedIds = []; S.transforming = null;
   const next = undoRedo.redo(JSON.stringify(S.strokes));
   restoreStrokes(next);
   redraw();
@@ -52,8 +52,8 @@ function genId() {
 }
 
 function copySelected() {
-  if (S.selectedId === null) return;
-  const sel = S.strokes.find(s => s.id === S.selectedId);
+  if (S.selectedIds.length === 0) return;
+  const sel = S.strokes.find(s => s.id === S.selectedIds[0]);
   if (!sel) return;
   S.clipboard = JSON.parse(JSON.stringify(sel));
 }
@@ -83,7 +83,7 @@ function pasteClipboard() {
   }
   saveState();
   S.strokes.push(copy);
-  S.selectedId = copy.id;
+  S.selectedIds = [copy.id];
   S.transforming = null;
   redraw();
 }
@@ -93,7 +93,7 @@ function setTool(tool) {
   if (S.drawing) { S.drawing = false; S.currentRaw = null; }
   if (S.erasing) cancelErase();
   resetIncrCache();
-  S.selectedId = null;
+  S.selectedIds = [];
   S.transforming = null;
   S.currentTool = tool;
   for (const id of TOOLS)
@@ -106,18 +106,49 @@ function setTool(tool) {
 initWS();
 tickAnimation();
 
+const brushToggle = document.getElementById('brushToggle');
+const bottomBar = document.getElementById('bottomBar');
+brushToggle.addEventListener('click', () => {
+  S.brushCollapsed = !S.brushCollapsed;
+  bottomBar.classList.toggle('collapsed', S.brushCollapsed);
+  resize();
+});
 
 const sizeSlider = document.getElementById('sizeSlider');
 const sizeLabel = document.getElementById('sizeLabel');
 function updateSize() {
   S.currentSize = parseFloat(sizeSlider.value);
-  sizeLabel.textContent = S.currentSize.toFixed(1);
+  sizeLabel.textContent = S.currentSize.toFixed(1).replace(/\.0$/, '');
   const p = document.getElementById('sizePreview');
   const s = Math.max(2, Math.min(20, S.currentSize * 2));
   p.style.width = s + 'px'; p.style.height = s + 'px'; p.style.background = S.currentColor;
 }
 sizeSlider.addEventListener('input', updateSize);
 updateSize();
+
+const simplifySlider = document.getElementById('simplifySlider');
+const simplifyLabel = document.getElementById('simplifyLabel');
+simplifySlider.addEventListener('input', () => {
+  S.simplifyEpsilon = parseFloat(simplifySlider.value);
+  simplifyLabel.textContent = S.simplifyEpsilon.toFixed(1);
+});
+S.simplifyEpsilon = parseFloat(simplifySlider.value);
+
+const smoothSlider = document.getElementById('smoothSlider');
+const smoothLabel = document.getElementById('smoothLabel');
+smoothSlider.addEventListener('input', () => {
+  S.smoothSegments = parseInt(smoothSlider.value, 10);
+  smoothLabel.textContent = S.smoothSegments;
+});
+S.smoothSegments = parseInt(smoothSlider.value, 10);
+
+const velSlider = document.getElementById('velSlider');
+const velLabel = document.getElementById('velLabel');
+velSlider.addEventListener('input', () => {
+  S.velInfluence = parseInt(velSlider.value, 10) / 100;
+  velLabel.textContent = parseInt(velSlider.value, 10) + '%';
+});
+S.velInfluence = parseInt(velSlider.value, 10) / 100;
 
 
 document.querySelectorAll('.swatch').forEach(el => {
@@ -231,14 +262,14 @@ document.addEventListener('keydown', (e) => {
     else if (e.key === 'a' || e.key === 'A') setTool('arrow');
     else if (e.key === 'g' || e.key === 'G') document.getElementById('gridToggle').click();
   }
-  if (e.key === 'Escape') { if (overlay.classList.contains('open')) { overlay.classList.remove('open'); return; } if (S.selectedId) { S.selectedId = null; S.transforming = null; redraw(); return; } if (S.currentTool === 'eraser') setTool('draw'); }
+  if (e.key === 'Escape') { if (overlay.classList.contains('open')) { overlay.classList.remove('open'); return; } if (S.selectedIds.length > 0) { S.selectedIds = []; S.transforming = null; redraw(); return; } if (S.currentTool === 'eraser') setTool('draw'); }
   if (e.key === '?' && !e.ctrlKey && !e.metaKey) { overlay.classList.toggle('open'); }
   if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey) { redo(); }
   else if (e.key === 'y' && (e.ctrlKey || e.metaKey)) { redo(); }
   else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) { undo(); }
   else if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); copySelected(); }
   else if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); pasteClipboard(); }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && S.selectedId) { deleteSelected(); }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && S.selectedIds.length > 0) { deleteSelected(); }
 });
 document.addEventListener('keyup', (e) => {
   if (e.key === ' ') S.spaceDown = false;
@@ -283,6 +314,7 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   if (e.button === 0) {
+    S.modKey = e.shiftKey;
     const p = getPos(e);
     handleDown(p.x, p.y, p.p);
   }
@@ -319,6 +351,7 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
 
+  S.modKey = e.shiftKey;
   const p = getPos(e);
   sendCursor(p.x, p.y);
   handleMove(p.x, p.y, p.p);

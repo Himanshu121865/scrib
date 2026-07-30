@@ -1,5 +1,5 @@
 import { process_stroke, mesh_from_centerline, shape_mesh, hit_path, hit_shape, get_bounds, finalize_stroke, transform_move, transform_resize, regenerate_mesh } from './pkg/scrib.js';
-import { S, canvas, cursorCanvas, EPSILON, SEGMENTS, CAP_FLOATS, INCR_THROTTLE, THROTTLE_DRAW, saveState, snap, getBounds, getHandles } from './state.js';
+import { S, canvas, cursorCanvas, CAP_FLOATS, INCR_THROTTLE, THROTTLE_DRAW, saveState, snap, getBounds, getHandles } from './state.js';
 import { redraw } from './render.js';
 import { sendWS } from './network.js';
 
@@ -9,7 +9,7 @@ function hitStroke(px, py) {
     const s = S.strokes[i];
     if (s.type === 'path') {
       if (s.data && hit_path(px, py, s.data, s.size)) return i;
-    } else if (hit_shape(px, py, s.type, s.x||0, s.y||0, s.x2||0, s.y2||0, s.size)) {
+    } else if (hit_shape(px, py, s.type, s.x1||s.x||0, s.y1||s.y||0, s.x2||0, s.y2||0, s.size)) {
       return i;
     }
   }
@@ -29,7 +29,7 @@ export function resetIncrCache() {
 }
 
 function processStrokeIncremental(raw) {
-  const cl = Array.from(process_stroke(raw, EPSILON, SEGMENTS, S.currentSize));
+  const cl = Array.from(process_stroke(raw, S.simplifyEpsilon, S.smoothSegments, S.currentSize, S.velInfluence));
 
   if (S.cachedCenterline && S.cachedMesh && S.cachedCenterline.length >= 6) {
     let diffIdx = 0;
@@ -66,7 +66,7 @@ function processStrokeIncremental(raw) {
 function finalizeStroke() {
   if (!S.currentRaw) return;
   saveState();
-  const obj = finalize_stroke(S.currentRaw, S.currentColor, S.currentSize, S.currentStrokeId || '', String(S.myId), EPSILON, SEGMENTS);
+  const obj = finalize_stroke(S.currentRaw, S.currentColor, S.currentSize, S.currentStrokeId || '', String(S.myId), S.simplifyEpsilon, S.smoothSegments, S.velInfluence);
   if (!obj || !obj.type) return;
   S.strokes.push(obj);
   if (S.currentStrokeId) {
@@ -202,44 +202,58 @@ function hitHandles(px, py, handles, handleSize) {
   return null;
 }
 
+function findStrokesByIds(ids) {
+  return ids.map(id => S.strokes.find(s => s.id === id)).filter(Boolean);
+}
+
+function combinedBounds(strokes) {
+  if (strokes.length === 0) return null;
+  let b = getBounds(strokes[0]);
+  let x1 = b.x1, y1 = b.y1, x2 = b.x2, y2 = b.y2;
+  for (let i = 1; i < strokes.length; i++) {
+    b = getBounds(strokes[i]);
+    if (b.x1 < x1) x1 = b.x1;
+    if (b.y1 < y1) y1 = b.y1;
+    if (b.x2 > x2) x2 = b.x2;
+    if (b.y2 > y2) y2 = b.y2;
+  }
+  return { x1, y1, x2, y2 };
+}
+
 function selectHandleDown(x, y) {
-  if (S.selectedId === null) {
-    const idx = hitStroke(x, y);
-    if (idx >= 0) {
-      S.selectedId = S.strokes[idx].id;
-      redraw();
-    } else {
-      S.selectRect = { x1: x, y1: y, x2: x, y2: y };
+  if (S.selectedIds.length > 0) {
+    const sels = findStrokesByIds(S.selectedIds);
+    if (sels.length > 0) {
+      const b = combinedBounds(sels);
+      const handles = getHandles(b);
+      const handleSize = 6 / S.camZoom;
+      const hit = hitHandles(x, y, handles, handleSize);
+      if (hit) {
+        S.transforming = { type: 'resize', resizedId: S.selectedIds[S.selectedIds.length - 1], handle: hit, startX: x, startY: y, b, didMove: false };
+        return;
+      }
+      if (x >= b.x1 && x <= b.x2 && y >= b.y1 && y <= b.y2) {
+        S.transforming = { type: 'move', startX: x, startY: y, didMove: false };
+        return;
+      }
     }
-    return;
-  }
-
-  const sel = findStrokeById(S.selectedId);
-  if (!sel) { S.selectedId = null; redraw(); return; }
-
-  const b = getBounds(sel);
-  const handles = getHandles(b);
-  const handleSize = 6 / S.camZoom;
-  const hit = hitHandles(x, y, handles, handleSize);
-
-  if (hit) {
-    S.transforming = { type: 'resize', handle: hit, startX: x, startY: y, b, didMove: false };
-    return;
-  }
-
-  if (hitStroke(x, y) === S.strokes.indexOf(sel)) {
-    S.transforming = { type: 'move', startX: x, startY: y, didMove: false };
-    return;
   }
 
   const idx = hitStroke(x, y);
   if (idx >= 0) {
-    S.selectedId = S.strokes[idx].id;
+    if (S.modKey) {
+      const id = S.strokes[idx].id;
+      const i = S.selectedIds.indexOf(id);
+      if (i >= 0) S.selectedIds.splice(i, 1); else S.selectedIds.push(id);
+    } else {
+      S.selectedIds = [S.strokes[idx].id];
+    }
+    redraw();
   } else {
-    S.selectedId = null;
+    S.selectedIds = [];
     S.selectRect = { x1: x, y1: y, x2: x, y2: y };
+    redraw();
   }
-  redraw();
 }
 
 function selectHandleMove(x, y) {
@@ -250,20 +264,21 @@ function selectHandleMove(x, y) {
     return;
   }
   if (!S.transforming) return;
-  const sel = findStrokeById(S.selectedId);
-  if (!sel) return;
 
   if (S.transforming.type === 'move') {
     const dx = x - S.transforming.startX;
     const dy = y - S.transforming.startY;
     if (dx !== 0 || dy !== 0) S.transforming.didMove = true;
-    transform_move(sel, dx, dy);
+    const sels = findStrokesByIds(S.selectedIds);
+    for (const sel of sels) transform_move(sel, dx, dy);
     S.transforming.startX = x; S.transforming.startY = y;
     redraw();
     return;
   }
 
   if (S.transforming.type === 'resize') {
+    const sel = findStrokeById(S.transforming.resizedId);
+    if (!sel) return;
     const b = S.transforming.b;
     S.transforming.didMove = true;
     transform_resize(sel, S.transforming.handle, x, y, b.x1, b.y1, b.x2, b.y2);
@@ -279,28 +294,37 @@ function selectHandleUp() {
     const ry2 = Math.max(S.selectRect.y1, S.selectRect.y2);
     if (Math.abs(rx2 - rx1) > 2 || Math.abs(ry2 - ry1) > 2) {
       for (let i = S.strokes.length - 1; i >= 0; i--) {
-        const s = S.strokes[i];
         if (S.toErase.has(i)) continue;
+        const s = S.strokes[i];
         const b = getBounds(s);
         if (b.x1 < rx2 && b.x2 > rx1 && b.y1 < ry2 && b.y2 > ry1) {
-          S.selectedId = s.id;
-          break;
+          if (!S.selectedIds.includes(s.id)) S.selectedIds.push(s.id);
         }
       }
     } else {
       const idx = hitStroke(S.selectRect.x1, S.selectRect.y1);
-      S.selectedId = idx >= 0 ? S.strokes[idx].id : null;
+      if (idx >= 0) {
+        if (S.modKey) {
+          const id = S.strokes[idx].id;
+          const i = S.selectedIds.indexOf(id);
+          if (i >= 0) S.selectedIds.splice(i, 1); else S.selectedIds.push(id);
+        } else {
+          S.selectedIds = [S.strokes[idx].id];
+        }
+      }
     }
     S.selectRect = null;
     redraw();
     return;
   }
   if (S.transforming) {
-    const sel = findStrokeById(S.selectedId);
     if (S.transforming.didMove) {
-      if (sel) regenerate_mesh(sel);
-      if (sel) {
-        sendWS(JSON.stringify({type: 'stroke-end', data: {id: sel.id, stroke: sel}}));
+      const sels = findStrokesByIds(S.selectedIds);
+      for (const sel of sels) {
+        if (sel) regenerate_mesh(sel);
+        if (sel && sel.id) {
+          sendWS(JSON.stringify({type: 'stroke-end', data: {id: sel.id, stroke: sel}}));
+        }
       }
       saveState();
     }
@@ -310,22 +334,27 @@ function selectHandleUp() {
 }
 
 export function deleteSelected() {
-  if (S.selectedId === null) return;
-  const idx = S.strokes.findIndex(s => s.id === S.selectedId);
-  if (idx < 0) return;
-  const s = S.strokes[idx];
-  if (s.id) sendWS(JSON.stringify({type: 'erase', ids: [s.id]}));
-  S.strokes.splice(idx, 1);
-  S.selectedId = null;
+  if (S.selectedIds.length === 0) return;
+  const ids = S.selectedIds.filter(id => S.strokes.some(s => s.id === id));
+  if (ids.length === 0) return;
+  sendWS(JSON.stringify({type: 'erase', ids}));
+  for (const id of ids) {
+    const idx = S.strokes.findIndex(s => s.id === id);
+    if (idx >= 0) S.strokes.splice(idx, 1);
+  }
+  S.selectedIds = [];
   S.transforming = null;
   saveState();
   redraw();
 }
 
 export function resize() {
+  const bh = S.brushCollapsed ? 28 : 64;
   const w = window.innerWidth - 48;
-  const h = window.innerHeight - 44 - 52;
+  const h = window.innerHeight - 44 - bh;
   canvas.width = w; canvas.height = h;
   cursorCanvas.width = w; cursorCanvas.height = h;
+  canvas.style.bottom = bh + 'px';
+  cursorCanvas.style.bottom = bh + 'px';
   redraw();
 }

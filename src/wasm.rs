@@ -30,7 +30,13 @@ pub fn tools() -> Array {
 }
 
 #[wasm_bindgen]
-pub fn process_stroke(data: Vec<f64>, epsilon: f64, segments: usize, base_size: f64) -> Vec<f64> {
+pub fn process_stroke(
+    data: Vec<f64>,
+    epsilon: f64,
+    segments: usize,
+    base_size: f64,
+    vel_influence: f64,
+) -> Vec<f64> {
     let points: Vec<Point> = data
         .chunks_exact(3)
         .map(|c| Point::new(c[0], c[1], c[2]))
@@ -41,7 +47,7 @@ pub fn process_stroke(data: Vec<f64>, epsilon: f64, segments: usize, base_size: 
     let mut s = stroke::Stroke::new_with_points(points);
     s.simplify_epsilon = epsilon;
     s.smooth_segments = segments;
-    s.process_with_widths(base_size)
+    s.process_with_widths(base_size, vel_influence)
         .into_iter()
         .flatten()
         .collect()
@@ -94,6 +100,7 @@ pub fn finalize_stroke(
     user_id: &str,
     epsilon: f64,
     segments: usize,
+    vel_influence: f64,
 ) -> JsValue {
     if raw.len() < 3 {
         return JsValue::NULL;
@@ -117,7 +124,7 @@ pub fn finalize_stroke(
         let mut s = stroke::Stroke::new_with_points(points);
         s.simplify_epsilon = epsilon;
         s.smooth_segments = segments;
-        let centerline = s.process_with_widths(size);
+        let centerline = s.process_with_widths(size, vel_influence);
         let flat: Vec<f64> = centerline.iter().flat_map(|c| c.iter()).copied().collect();
         let mesh = geometry::generate_mesh(&centerline, 8);
         set(&obj, "type", &"path".into());

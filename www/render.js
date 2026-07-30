@@ -35,11 +35,19 @@ function drawSelection() {
     ctx.setLineDash([]);
     return;
   }
-  if (!S.selectedId) return;
-  const sel = S.strokes.find(s => s.id === S.selectedId);
-  if (!sel) { S.selectedId = null; return; }
-  const b = getBounds(sel);
-  render_draw_selection(ctx, b.x1, b.y1, b.x2, b.y2, S.camZoom);
+  if (S.selectedIds.length === 0) return;
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const id of S.selectedIds) {
+    const sel = S.strokes.find(s => s.id === id);
+    if (!sel) continue;
+    const b = getBounds(sel);
+    if (b.x1 < x1) x1 = b.x1;
+    if (b.y1 < y1) y1 = b.y1;
+    if (b.x2 > x2) x2 = b.x2;
+    if (b.y2 > y2) y2 = b.y2;
+  }
+  if (x1 === Infinity) return;
+  render_draw_selection(ctx, x1, y1, x2, y2, S.camZoom);
 }
 
 export function redraw() {

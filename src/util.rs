@@ -36,6 +36,11 @@ pub fn incr_throttle() -> f64 {
 }
 
 #[wasm_bindgen]
+pub fn velocity_influence() -> f64 {
+    0.75
+}
+
+#[wasm_bindgen]
 pub fn screen_to_canvas(sx: f64, sy: f64, cam_x: f64, cam_y: f64, cam_zoom: f64) -> Vec<f64> {
     vec![(sx - cam_x) / cam_zoom, (sy - cam_y) / cam_zoom]
 }

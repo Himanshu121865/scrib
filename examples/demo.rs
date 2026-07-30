@@ -5,7 +5,7 @@ fn main() {
     let raw = generate_points();
 
     let s = stroke::Stroke::new_with_points(raw.clone());
-    let output = s.process_with_widths(4.0);
+    let output = s.process_with_widths(4.0, 0.75);
 
     let svg = render_svg(&raw, &output);
     println!("{svg}");
