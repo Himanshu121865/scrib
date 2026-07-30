@@ -58,6 +58,7 @@ export const S = {
   liveStrokes: {},
   liveShapes: {},
   cachedCenterline: null,
+  clipboard: null,
 };
 
 export function saveState() {

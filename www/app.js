@@ -37,6 +37,47 @@ function redo() {
   redraw();
 }
 
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function copySelected() {
+  if (S.selectedId === null) return;
+  const sel = S.strokes.find(s => s.id === S.selectedId);
+  if (!sel) return;
+  S.clipboard = JSON.parse(JSON.stringify(sel));
+}
+
+function pasteClipboard() {
+  if (!S.clipboard) return;
+  S.currentTool = 'select';
+  for (const id of TOOLS)
+    document.getElementById('tool' + id)?.classList.toggle('active', id === 'select');
+  canvas.style.cursor = 'default';
+
+  const copy = JSON.parse(JSON.stringify(S.clipboard));
+  copy.id = genId();
+  copy.userId = '';
+  const off = S.showGrid ? 30 : 20;
+  if (copy.type === 'dot') {
+    copy.x += off;
+    copy.y += off;
+  } else if (copy.type === 'path') {
+    for (let i = 0; i + 2 < copy.data.length; i += 3) {
+      copy.data[i] += off;
+      copy.data[i + 1] += off;
+    }
+  } else {
+    copy.x1 += off; copy.y1 += off;
+    copy.x2 += off; copy.y2 += off;
+  }
+  saveState();
+  S.strokes.push(copy);
+  S.selectedId = copy.id;
+  S.transforming = null;
+  redraw();
+}
+
 function setTool(tool) {
   if (S.shaping) { S.shaping = false; S.shapeStart = null; redraw(); }
   if (S.drawing) { S.drawing = false; S.currentRaw = null; }
@@ -169,19 +210,23 @@ document.getElementById('clear').addEventListener('click', () => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === ' ') { e.preventDefault(); S.spaceDown = true; }
-  if (e.key === 's' || e.key === 'S') setTool('select');
-  if (e.key === 'e' || e.key === 'E') setTool('eraser');
-  if (e.key === 'd' || e.key === 'D') setTool('draw');
-  if (e.key === 'r' || e.key === 'R') setTool('rect');
-  if (e.key === 'c' || e.key === 'C') setTool('circle');
-  if (e.key === 'l' || e.key === 'L') setTool('line');
-  if (e.key === 'a' || e.key === 'A') setTool('arrow');
-  if (e.key === 'g' || e.key === 'G') { document.getElementById('gridToggle').click(); }
+  if (!e.ctrlKey && !e.metaKey) {
+    if (e.key === 's' || e.key === 'S') setTool('select');
+    else if (e.key === 'e' || e.key === 'E') setTool('eraser');
+    else if (e.key === 'd' || e.key === 'D') setTool('draw');
+    else if (e.key === 'r' || e.key === 'R') setTool('rect');
+    else if (e.key === 'c' || e.key === 'C') setTool('circle');
+    else if (e.key === 'l' || e.key === 'L') setTool('line');
+    else if (e.key === 'a' || e.key === 'A') setTool('arrow');
+    else if (e.key === 'g' || e.key === 'G') document.getElementById('gridToggle').click();
+  }
   if (e.key === 'Escape') { if (overlay.classList.contains('open')) { overlay.classList.remove('open'); return; } if (S.selectedId) { S.selectedId = null; S.transforming = null; redraw(); return; } if (S.currentTool === 'eraser') setTool('draw'); }
   if (e.key === '?' && !e.ctrlKey && !e.metaKey) { overlay.classList.toggle('open'); }
   if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey) { redo(); }
   else if (e.key === 'y' && (e.ctrlKey || e.metaKey)) { redo(); }
   else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) { undo(); }
+  else if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); copySelected(); }
+  else if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); pasteClipboard(); }
 });
 document.addEventListener('keyup', (e) => {
   if (e.key === ' ') S.spaceDown = false;
