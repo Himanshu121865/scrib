@@ -36,6 +36,7 @@ function onWSInit(msg) {
   S.myId = msg.id;
   S.myColor = msg.color;
   updateUserCount();
+  redraw();
 }
 
 function onWSJoin(msg) {
