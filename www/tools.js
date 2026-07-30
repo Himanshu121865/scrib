@@ -1,25 +1,16 @@
-import { process_stroke, mesh_from_centerline, shape_mesh, hit_path } from './pkg/scrib.js';
-import { S, canvas, cursorCanvas, EPSILON, SEGMENTS, CAP_FLOATS, INCR_THROTTLE, THROTTLE_DRAW, GRID, saveState, snap, distToSegment } from './state.js';
+import { process_stroke, mesh_from_centerline, shape_mesh, hit_path, hit_shape, get_bounds, finalize_stroke, transform_move, transform_resize, regenerate_mesh } from './pkg/scrib.js';
+import { S, canvas, cursorCanvas, EPSILON, SEGMENTS, CAP_FLOATS, INCR_THROTTLE, THROTTLE_DRAW, saveState, snap, getBounds, getHandles } from './state.js';
 import { redraw } from './render.js';
+import { sendWS } from './network.js';
 
-export function hitStroke(px, py) {
+function hitStroke(px, py) {
   for (let i = S.strokes.length - 1; i >= 0; i--) {
     if (S.toErase.has(i)) continue;
     const s = S.strokes[i];
-    const t = Math.max(s.size / 2, 4);
-    if (s.type === 'dot') {
-      if (Math.hypot(px - s.x, py - s.y) <= t) return i;
-    } else if (s.type === 'path') {
+    if (s.type === 'path') {
       if (s.data && hit_path(px, py, s.data, s.size)) return i;
-    } else if (s.type === 'rect') {
-      const l = Math.min(s.x1, s.x2), r = Math.max(s.x1, s.x2);
-      const u = Math.min(s.y1, s.y2), d = Math.max(s.y1, s.y2);
-      if (Math.hypot(px - Math.max(l, Math.min(r, px)), py - Math.max(u, Math.min(d, py))) <= t) return i;
-    } else if (s.type === 'circle') {
-      const cx = (s.x1 + s.x2) / 2, cy = (s.y1 + s.y2) / 2;
-      if (Math.abs(Math.hypot(px - cx, py - cy) - Math.hypot(s.x2 - s.x1, s.y2 - s.y1) / 2) <= t) return i;
-    } else if (s.type === 'line' || s.type === 'arrow') {
-      if (distToSegment(px, py, s.x1, s.y1, s.x2, s.y2) <= t) return i;
+    } else if (hit_shape(px, py, s.type, s.x||0, s.y||0, s.x2||0, s.y2||0, s.size)) {
+      return i;
     }
   }
   return -1;
@@ -37,7 +28,7 @@ export function resetIncrCache() {
   S.cachedMesh = null;
 }
 
-export function processStrokeIncremental(raw) {
+function processStrokeIncremental(raw) {
   const cl = Array.from(process_stroke(raw, EPSILON, SEGMENTS, S.currentSize));
 
   if (S.cachedCenterline && S.cachedMesh && S.cachedCenterline.length >= 6) {
@@ -72,21 +63,14 @@ export function processStrokeIncremental(raw) {
   return { data: cl, mesh: mesh };
 }
 
-export function finalizeStroke() {
+function finalizeStroke() {
   if (!S.currentRaw) return;
   saveState();
-  let obj;
-  if (S.currentRaw.length === 3) {
-    obj = { type: 'dot', x: S.currentRaw[0], y: S.currentRaw[1], color: S.currentColor, size: S.currentSize, pressure: S.currentRaw[2], id: S.currentStrokeId, userId: S.myId };
-    S.strokes.push(obj);
-  } else if (S.currentRaw.length > 3) {
-    const data = Array.from(process_stroke(S.currentRaw, EPSILON, SEGMENTS, S.currentSize));
-    const mesh = Array.from(mesh_from_centerline(data));
-    obj = { type: 'path', data, mesh, color: S.currentColor, size: S.currentSize, id: S.currentStrokeId, userId: S.myId };
-    S.strokes.push(obj);
-  }
-  if (S.ws?.readyState === WebSocket.OPEN && S.currentStrokeId) {
-    S.ws.send(JSON.stringify({type: 'stroke-end', data: {id: S.currentStrokeId, stroke: obj}}));
+  const obj = finalize_stroke(S.currentRaw, S.currentColor, S.currentSize, S.currentStrokeId || '', S.myId, EPSILON, SEGMENTS);
+  if (!obj || !obj.type) return;
+  S.strokes.push(obj);
+  if (S.currentStrokeId) {
+    sendWS(JSON.stringify({type: 'stroke-end', data: {id: S.currentStrokeId, stroke: obj}}));
   }
   S.currentRaw = null;
   S.currentStrokeId = null;
@@ -94,6 +78,7 @@ export function finalizeStroke() {
 }
 
 export function handleDown(x, y, pressure) {
+  if (S.currentTool === 'select') { selectHandleDown(x, y); return; }
   if (S.currentTool === 'eraser') {
     S.erasing = true;
     S.eraserPath = [x, y];
@@ -107,9 +92,7 @@ export function handleDown(x, y, pressure) {
     S.cachedMesh = null;
     resetIncrCache();
     S.lastStrokeSendTime = 0;
-    if (S.ws?.readyState === WebSocket.OPEN) {
-      S.ws.send(JSON.stringify({type: 'stroke-start', data: {id: S.currentStrokeId, color: S.currentColor, size: S.currentSize}}));
-    }
+    sendWS(JSON.stringify({type: 'stroke-start', data: {id: S.currentStrokeId, color: S.currentColor, size: S.currentSize}}));
     return;
   }
   S.shaping = true;
@@ -117,7 +100,8 @@ export function handleDown(x, y, pressure) {
   S.shapeStart = { x: snap(x), y: snap(y), x2: snap(x), y2: snap(y) };
 }
 
-export function handleMove(x, y) {
+export function handleMove(x, y, pressure) {
+  if (S.currentTool === 'select') { selectHandleMove(x, y); return; }
   if (S.currentTool === 'eraser') {
     if (!S.erasing) return;
     S.eraserPath.push(x, y);
@@ -134,16 +118,16 @@ export function handleMove(x, y) {
   }
   if (S.currentTool === 'draw') {
     if (!S.drawing) return;
-    S.currentRaw.push(x, y, 0.5);
+    S.currentRaw.push(x, y, pressure ?? 0.5);
     const now = Date.now();
     if (S.currentRaw.length > 3 && now - S.lastIncrTime > INCR_THROTTLE) {
       S.lastIncrTime = now;
       const { mesh } = processStrokeIncremental(S.currentRaw);
       S.cachedMesh = mesh;
     }
-    if (now - S.lastStrokeSendTime > THROTTLE_DRAW && S.ws?.readyState === WebSocket.OPEN && S.currentStrokeId && S.cachedMesh) {
+    if (now - S.lastStrokeSendTime > THROTTLE_DRAW && S.currentStrokeId && S.cachedMesh) {
       S.lastStrokeSendTime = now;
-      S.ws.send(JSON.stringify({type: 'stroke-update', data: {id: S.currentStrokeId, mesh: S.cachedMesh}}));
+      sendWS(JSON.stringify({type: 'stroke-update', data: {id: S.currentStrokeId, mesh: S.cachedMesh}}));
     }
     redraw();
     return;
@@ -152,9 +136,9 @@ export function handleMove(x, y) {
   S.shapeStart.x2 = snap(x);
   S.shapeStart.y2 = snap(y);
   const now = Date.now();
-  if (now - S.lastStrokeSendTime > THROTTLE_DRAW && S.ws?.readyState === WebSocket.OPEN && S.currentShapeId) {
+  if (now - S.lastStrokeSendTime > THROTTLE_DRAW && S.currentShapeId) {
     S.lastStrokeSendTime = now;
-    S.ws.send(JSON.stringify({type: 'shape-update', data: {
+    sendWS(JSON.stringify({type: 'shape-update', data: {
       id: S.currentShapeId,
       shape: { type: S.currentTool, x1: S.shapeStart.x, y1: S.shapeStart.y, x2: S.shapeStart.x2, y2: S.shapeStart.y2, color: S.currentColor, size: S.currentSize }
     }}));
@@ -163,6 +147,7 @@ export function handleMove(x, y) {
 }
 
 export function handleUp() {
+  if (S.currentTool === 'select') { selectHandleUp(); return; }
   if (S.currentTool === 'eraser') {
     if (!S.erasing) return;
     S.erasing = false;
@@ -173,15 +158,12 @@ export function handleUp() {
       const s = S.strokes[idx];
       if (!s) continue;
       if (s.userId !== undefined && s.userId !== S.myId) continue;
+      if (s.id === S.selectedId) { S.selectedId = null; S.transforming = null; }
       if (s.id) erasedIds.push(s.id);
       S.strokes.splice(idx, 1);
     }
     if (erasedIds.length > 0) {
-      try {
-        if (S.ws?.readyState === WebSocket.OPEN) {
-          S.ws.send(JSON.stringify({type: 'erase', ids: erasedIds}));
-        }
-      } catch(e) { console.error('erase send failed', e); }
+      sendWS(JSON.stringify({type: 'erase', ids: erasedIds}));
     }
     S.toErase = new Set();
     S.eraserPath = [];
@@ -202,13 +184,97 @@ export function handleUp() {
     const mesh = Array.from(shape_mesh(S.currentTool, S.shapeStart.x, S.shapeStart.y, S.shapeStart.x2, S.shapeStart.y2, S.currentSize, 32));
     const obj = { type: S.currentTool, x1: S.shapeStart.x, y1: S.shapeStart.y, x2: S.shapeStart.x2, y2: S.shapeStart.y2, mesh, color: S.currentColor, size: S.currentSize, id: S.currentShapeId, userId: S.myId };
     S.strokes.push(obj);
-    if (S.ws?.readyState === WebSocket.OPEN) {
-      S.ws.send(JSON.stringify({type: 'stroke-end', data: {id: S.currentShapeId, stroke: obj}}));
-    }
+    sendWS(JSON.stringify({type: 'stroke-end', data: {id: S.currentShapeId, stroke: obj}}));
   }
   S.shapeStart = null;
   S.currentShapeId = null;
   redraw();
+}
+
+function findStrokeById(id) {
+  return S.strokes.find(s => s.id === id);
+}
+
+function hitHandles(px, py, handles, handleSize) {
+  for (const h of handles) {
+    if (Math.abs(px - h.x) <= handleSize && Math.abs(py - h.y) <= handleSize) return h.id;
+  }
+  return null;
+}
+
+function selectHandleDown(x, y) {
+  if (S.selectedId === null) {
+    const idx = hitStroke(x, y);
+    if (idx >= 0) {
+      S.selectedId = S.strokes[idx].id;
+      redraw();
+    }
+    return;
+  }
+
+  const sel = findStrokeById(S.selectedId);
+  if (!sel) { S.selectedId = null; redraw(); return; }
+
+  const b = getBounds(sel);
+  const handles = getHandles(b);
+  const handleSize = 6 / S.camZoom;
+  const hit = hitHandles(x, y, handles, handleSize);
+
+  if (hit) {
+    S.transforming = { type: 'resize', handle: hit, startX: x, startY: y, b, didMove: false };
+    return;
+  }
+
+  if (hitStroke(x, y) === S.strokes.indexOf(sel)) {
+    S.transforming = { type: 'move', startX: x, startY: y, didMove: false };
+    return;
+  }
+
+  const idx = hitStroke(x, y);
+  if (idx >= 0) {
+    S.selectedId = S.strokes[idx].id;
+  } else {
+    S.selectedId = null;
+  }
+  redraw();
+}
+
+function selectHandleMove(x, y) {
+  if (!S.transforming) return;
+  const sel = findStrokeById(S.selectedId);
+  if (!sel) return;
+
+  if (S.transforming.type === 'move') {
+    const dx = x - S.transforming.startX;
+    const dy = y - S.transforming.startY;
+    if (dx !== 0 || dy !== 0) S.transforming.didMove = true;
+    transform_move(sel, dx, dy);
+    S.transforming.startX = x; S.transforming.startY = y;
+    redraw();
+    return;
+  }
+
+  if (S.transforming.type === 'resize') {
+    const b = S.transforming.b;
+    S.transforming.didMove = true;
+    transform_resize(sel, S.transforming.handle, x, y, b.x1, b.y1, b.x2, b.y2);
+    redraw();
+  }
+}
+
+function selectHandleUp() {
+  if (S.transforming) {
+    const sel = findStrokeById(S.selectedId);
+    if (S.transforming.didMove) {
+      if (sel) regenerate_mesh(sel);
+      if (sel) {
+        sendWS(JSON.stringify({type: 'stroke-end', data: {id: sel.id, stroke: sel}}));
+      }
+      saveState();
+    }
+    S.transforming = null;
+    redraw();
+  }
 }
 
 export function resize() {

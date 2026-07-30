@@ -1,34 +1,39 @@
 import init from './pkg/scrib.js';
-import { S, canvas, TOOLS, saveState, getPos } from './state.js';
+import { S, canvas, TOOLS, saveState, getPos, undoRedo } from './state.js';
 import { redraw, tickAnimation } from './render.js';
 import { cancelErase, resetIncrCache, handleDown, handleMove, handleUp, resize } from './tools.js';
 import { initWS, sendCursor } from './network.js';
 
 await init();
 
+function restoreStrokes(json) {
+  if (!json) return;
+  S.strokes.length = 0;
+  const parsed = JSON.parse(json);
+  for (const s of parsed) S.strokes.push(s);
+}
+
 function undo() {
-  if (S.undoStack.length === 0) return;
+  if (!undoRedo.can_undo()) return;
   if (S.drawing) { S.drawing = false; S.currentRaw = null; }
   if (S.shaping) { S.shaping = false; S.shapeStart = null; }
   if (S.erasing) cancelErase();
   resetIncrCache();
-  S.redoStack.push(JSON.parse(JSON.stringify(S.strokes)));
-  const saved = S.undoStack.pop();
-  S.strokes.length = 0;
-  for (const s of saved) S.strokes.push(s);
+  S.selectedId = null; S.transforming = null;
+  const prev = undoRedo.undo(JSON.stringify(S.strokes));
+  restoreStrokes(prev);
   redraw();
 }
 
 function redo() {
-  if (S.redoStack.length === 0) return;
+  if (!undoRedo.can_redo()) return;
   if (S.drawing) { S.drawing = false; S.currentRaw = null; }
   if (S.shaping) { S.shaping = false; S.shapeStart = null; }
   if (S.erasing) cancelErase();
   resetIncrCache();
-  S.undoStack.push(JSON.parse(JSON.stringify(S.strokes)));
-  const saved = S.redoStack.pop();
-  S.strokes.length = 0;
-  for (const s of saved) S.strokes.push(s);
+  S.selectedId = null; S.transforming = null;
+  const next = undoRedo.redo(JSON.stringify(S.strokes));
+  restoreStrokes(next);
   redraw();
 }
 
@@ -37,10 +42,13 @@ function setTool(tool) {
   if (S.drawing) { S.drawing = false; S.currentRaw = null; }
   if (S.erasing) cancelErase();
   resetIncrCache();
+  S.selectedId = null;
+  S.transforming = null;
   S.currentTool = tool;
   for (const id of TOOLS)
     document.getElementById('tool' + id)?.classList.toggle('active', id === tool);
-  canvas.style.cursor = tool === 'eraser' ? 'pointer' : 'crosshair';
+  canvas.style.cursor = tool === 'eraser' ? 'pointer' : tool === 'select' ? 'default' : 'crosshair';
+  redraw();
 }
 
 
@@ -152,6 +160,8 @@ document.getElementById('clear').addEventListener('click', () => {
   S.strokes.length = 0;
   S.currentRaw = null;
   S.drawing = false;
+  S.selectedId = null;
+  S.transforming = null;
   resetIncrCache();
   redraw();
 });
@@ -159,6 +169,7 @@ document.getElementById('clear').addEventListener('click', () => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === ' ') { e.preventDefault(); S.spaceDown = true; }
+  if (e.key === 's' || e.key === 'S') setTool('select');
   if (e.key === 'e' || e.key === 'E') setTool('eraser');
   if (e.key === 'd' || e.key === 'D') setTool('draw');
   if (e.key === 'r' || e.key === 'R') setTool('rect');
@@ -166,7 +177,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'l' || e.key === 'L') setTool('line');
   if (e.key === 'a' || e.key === 'A') setTool('arrow');
   if (e.key === 'g' || e.key === 'G') { document.getElementById('gridToggle').click(); }
-  if (e.key === 'Escape') { if (overlay.classList.contains('open')) { overlay.classList.remove('open'); return; } if (S.currentTool === 'eraser') setTool('draw'); }
+  if (e.key === 'Escape') { if (overlay.classList.contains('open')) { overlay.classList.remove('open'); return; } if (S.selectedId) { S.selectedId = null; S.transforming = null; redraw(); return; } if (S.currentTool === 'eraser') setTool('draw'); }
   if (e.key === '?' && !e.ctrlKey && !e.metaKey) { overlay.classList.toggle('open'); }
   if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey) { redo(); }
   else if (e.key === 'y' && (e.ctrlKey || e.metaKey)) { redo(); }
@@ -253,7 +264,7 @@ canvas.addEventListener('pointermove', (e) => {
 
   const p = getPos(e);
   sendCursor(p.x, p.y);
-  handleMove(p.x, p.y);
+  handleMove(p.x, p.y, p.p);
 });
 
 canvas.addEventListener('pointerup', (e) => {
