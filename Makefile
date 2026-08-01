@@ -1,20 +1,16 @@
 .PHONY: all build serve server test lint fmt clean
 
 all: build
-	@-pkill scrib-server 2>/dev/null; fuser -k 8080/tcp 2>/dev/null; sleep 0.5
-	@echo "=== Starting WebSocket server (background) ==="
-	@cargo run -p scrib-server &
-	@sleep 1
-	@echo "=== Starting HTTP server ==="
-	@cd www && python3 -m http.server 8080; EC=$$?; \
-		kill %1 2>/dev/null; exit $$EC
+	@-pkill scrib-server 2>/dev/null; sleep 0.5
+	@echo "=== Starting server (HTTP + WebSocket on :9876) ==="
+	@cargo run -p scrib-server
 
 build:
 	wasm-pack build --target web --features wasm
 	cp pkg/* www/pkg/
 
-serve:
-	cd www && python3 -m http.server 8080
+serve: build
+	cargo run -p scrib-server
 
 server:
 	cargo run -p scrib-server

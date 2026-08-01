@@ -1,0 +1,7 @@
+target
+pkg
+www/pkg
+.git
+.opencode
+AGENTS.md
+data

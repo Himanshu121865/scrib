@@ -3,12 +3,10 @@ use std::time::Instant;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::json;
-use tokio::net::TcpStream;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::time::{timeout, Duration};
-use tokio_tungstenite::accept_async;
-use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
+use warp::ws::Message;
 
 use crate::room::{self, ServerMsg, SharedState, UserId};
 
@@ -46,19 +44,20 @@ impl MsgRateLimiter {
     }
 }
 
-pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, state: SharedState) {
-    let ws = match accept_async(stream).await {
-        Ok(ws) => ws,
-        Err(e) => {
-            warn!("WS accept error from {addr}: {e}");
-            return;
-        }
-    };
+pub async fn handle_ws(
+    ws: warp::ws::WebSocket,
+    addr: Option<std::net::SocketAddr>,
+    state: SharedState,
+) {
+    let addr_str = addr.map_or_else(|| "unknown".to_string(), |a| a.to_string());
 
     let (mut ws_tx, mut ws_rx) = ws.split();
 
     let join_msg = match timeout(Duration::from_secs(room::JOIN_TIMEOUT_SECS), ws_rx.next()).await {
-        Ok(Some(Ok(Message::Text(text)))) => text,
+        Ok(Some(Ok(msg))) => match msg.to_str() {
+            Ok(t) => t.to_string(),
+            Err(_) => return,
+        },
         Ok(_) => return,
         Err(_) => {
             let _ = ws_tx.send(err_msg("join timeout")).await;
@@ -132,7 +131,7 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
             return;
         }
     };
-    let _ = init_tx.send(Message::Text(init_text)).await.ok();
+    let _ = init_tx.send(Message::text(init_text)).await.ok();
 
     let join_broadcast = ServerMsg {
         msg_type: "join".to_string(),
@@ -147,15 +146,18 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
         owners: None,
     };
     broadcast(&state, user_id, &join_broadcast).await;
-    info!("user {user_id} ({user_color}) connected [{addr}]");
+    info!("user {user_id} ({user_color}) connected [{addr_str}]");
 
     let mut limiter = MsgRateLimiter::new();
     loop {
         let msg = match ws_rx.next().await {
-            Some(Ok(Message::Text(t))) => t,
-            Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => continue,
-            Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
-            _ => continue,
+            Some(Ok(m)) if m.is_text() => match m.to_str() {
+                Ok(t) => t.to_string(),
+                Err(_) => continue,
+            },
+            Some(Ok(m)) if m.is_close() => break,
+            Some(Ok(_)) => continue,
+            Some(Err(_)) | None => break,
         };
 
         if msg.len() > room::MAX_MSG_BYTES {
@@ -317,7 +319,7 @@ async fn broadcast(state: &SharedState, sender_id: UserId, msg: &ServerMsg) {
         if uid == sender_id {
             continue;
         }
-        match user.tx.try_send(Message::Text(text.clone())) {
+        match user.tx.try_send(Message::text(text.clone())) {
             Ok(_) => {}
             Err(TrySendError::Full(_)) => {
                 if msg.msg_type != "cursor" {
@@ -349,5 +351,5 @@ fn ensure_id(stroke: &mut serde_json::Value, user_id: UserId) {
 }
 
 fn err_msg(text: &str) -> Message {
-    Message::Text(json!({"type": "error", "message": text}).to_string())
+    Message::text(json!({"type": "error", "message": text}).to_string())
 }

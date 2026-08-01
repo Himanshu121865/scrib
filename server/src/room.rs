@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
-use tokio_tungstenite::tungstenite::Message;
+use warp::ws::Message;
 
 pub type UserId = usize;
 

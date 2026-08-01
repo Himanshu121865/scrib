@@ -85,7 +85,8 @@ function onWSCursor(msg) {
 }
 
 export function initWS() {
-  const url = `ws://${location.hostname}:9876`;
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = `${scheme}://${location.host}/ws`;
   document.getElementById('bottomInfo').textContent = 'connecting...';
   client.connect(url, onWSMessage, onWSStatus);
 }

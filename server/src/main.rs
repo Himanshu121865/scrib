@@ -1,13 +1,14 @@
 mod room;
 mod ws;
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use clap::Parser;
-use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
+use warp::Filter;
 
 use crate::room::AppState;
 
@@ -17,11 +18,18 @@ struct Args {
     #[arg(long, default_value = "0.0.0.0")]
     addr: String,
 
-    #[arg(long, default_value_t = 9876)]
-    port: u16,
+    #[arg(long)]
+    port: Option<u16>,
 
     #[arg(long, default_value_t = 50)]
     max_users: usize,
+}
+
+fn default_port() -> u16 {
+    std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(9876)
 }
 
 #[tokio::main]
@@ -31,37 +39,34 @@ async fn main() {
         .init();
 
     let args = Args::parse();
-    let bind = format!("{}:{}", args.addr, args.port);
-    let listener = TcpListener::bind(&bind).await.expect("Failed to bind");
-    info!("listening on ws://{bind}");
+    let port = args.port.unwrap_or_else(default_port);
+    let bind: SocketAddr = format!("{}:{}", args.addr, port)
+        .parse()
+        .expect("invalid bind address");
 
     let state = Arc::new(AppState {
         board: Arc::new(RwLock::new(room::Board::new())),
         max_users: args.max_users,
     });
 
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let ws_route = warp::path("ws")
+        .and(warp::ws())
+        .and(warp::addr::remote())
+        .and(with_state(state))
+        .map(
+            |ws: warp::ws::Ws, addr: Option<SocketAddr>, state: Arc<AppState>| {
+                ws.on_upgrade(move |socket| ws::handle_ws(socket, addr, state))
+            },
+        );
 
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        info!("shutting down...");
-        let _ = shutdown_tx.send(());
-    });
+    let static_route = warp::get().and(warp::fs::dir("www"));
 
-    loop {
-        tokio::select! {
-            result = listener.accept() => {
-                match result {
-                    Ok((stream, addr)) => {
-                        let state = state.clone();
-                        tokio::spawn(ws::handle_connection(stream, addr, state));
-                    }
-                    Err(e) => warn!("accept error: {e}"),
-                }
-            }
-            _ = &mut shutdown_rx => break,
-        }
-    }
+    info!("listening on http://{bind}");
+    warp::serve(ws_route.or(static_route)).run(bind).await;
+}
 
-    info!("server stopped");
+fn with_state(
+    state: Arc<AppState>,
+) -> impl Filter<Extract = (Arc<AppState>,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || state.clone())
 }
