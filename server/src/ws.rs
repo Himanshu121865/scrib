@@ -16,7 +16,6 @@ use crate::room::{self, ServerMsg, SharedState, UserId};
 struct ClientMsg {
     #[serde(rename = "type")]
     msg_type: String,
-    room: Option<String>,
     data: Option<serde_json::Value>,
     x: Option<f64>,
     y: Option<f64>,
@@ -58,7 +57,6 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
 
     let (mut ws_tx, mut ws_rx) = ws.split();
 
-    // --- join handshake (with timeout) ---
     let join_msg = match timeout(Duration::from_secs(room::JOIN_TIMEOUT_SECS), ws_rx.next()).await {
         Ok(Some(Ok(Message::Text(text)))) => text,
         Ok(_) => return,
@@ -68,7 +66,6 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
         }
     };
 
-    // --- validation (uses ws_tx directly before forward takes over) ---
     if join_msg.len() > room::MAX_MSG_BYTES {
         let _ = ws_tx.send(err_msg("message too large")).await;
         return;
@@ -84,17 +81,7 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
         let _ = ws_tx.send(err_msg("first message must be join")).await;
         return;
     }
-    let room_id = parsed.room.unwrap_or_else(|| "default".to_string());
-    if !room::validate_room_id(&room_id) {
-        let _ = ws_tx
-            .send(err_msg(&format!("invalid room id: '{room_id}'")))
-            .await;
-        return;
-    }
 
-    let path = room::room_path(&state.data_dir, &room_id);
-
-    // --- set up outgoing channel (forward task takes over ws_tx) ---
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Message>(room::MSG_CHANNEL_CAP);
     let init_tx = tx.clone();
 
@@ -106,28 +93,18 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
         }
     });
 
-    // --- join room (atomically check capacity + add user) ---
     let join_result = {
-        let mut map = state.rooms.write().await;
-        let room = map.entry(room_id.clone()).or_insert_with(|| {
-            let p = path.clone();
-            room::Room::load(&p).unwrap_or_else(|_| {
-                info!("created new room '{room_id}'");
-                room::Room::new()
-            })
-        });
-
-        if room.users.len() >= state.max_users {
+        let mut board = state.board.write().await;
+        if board.users.len() >= state.max_users {
             Err(())
         } else {
-            let (uid, color) = room.add_user(tx);
-            assign_stroke_ids(room);
+            let (uid, color) = board.add_user(tx);
             let init = ServerMsg {
                 msg_type: "init".to_string(),
                 id: Some(uid),
                 color: Some(color.clone()),
-                users: Some(room.user_list()),
-                strokes: Some(room.stroke_entries()),
+                users: Some(board.user_list()),
+                strokes: Some(board.stroke_entries()),
                 data: None,
                 x: None,
                 y: None,
@@ -141,7 +118,7 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
     let (user_id, user_color, init) = match join_result {
         Ok(triple) => triple,
         Err(_) => {
-            let _ = init_tx.try_send(err_msg("room is full")).ok();
+            let _ = init_tx.try_send(err_msg("board is full")).ok();
             forward.abort();
             return;
         }
@@ -157,7 +134,6 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
     };
     let _ = init_tx.send(Message::Text(init_text)).await.ok();
 
-    // --- broadcast join to other users ---
     let join_broadcast = ServerMsg {
         msg_type: "join".to_string(),
         id: Some(user_id),
@@ -170,10 +146,9 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
         ids: None,
         owners: None,
     };
-    broadcast(&state, &room_id, user_id, &join_broadcast).await;
-    info!("user {user_id} ({user_color}) joined room '{room_id}' [{addr}]");
+    broadcast(&state, user_id, &join_broadcast).await;
+    info!("user {user_id} ({user_color}) connected [{addr}]");
 
-    // --- message loop ---
     let mut limiter = MsgRateLimiter::new();
     loop {
         let msg = match ws_rx.next().await {
@@ -212,16 +187,16 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
                     ids: None,
                     owners: None,
                 };
-                broadcast(&state, &room_id, user_id, &msg).await;
+                broadcast(&state, user_id, &msg).await;
             }
             "stroke-end" => {
-                handle_stroke_end(&state, &room_id, user_id, parsed).await;
+                handle_stroke_end(&state, user_id, parsed).await;
             }
             "clear" => {
-                handle_clear(&state, &room_id).await;
+                handle_clear(&state).await;
             }
             "erase" => {
-                handle_erase(&state, &room_id, user_id, parsed).await;
+                handle_erase(&state, user_id, parsed).await;
             }
             "cursor" => {
                 let msg = ServerMsg {
@@ -236,18 +211,18 @@ pub async fn handle_connection(stream: TcpStream, addr: std::net::SocketAddr, st
                     ids: None,
                     owners: None,
                 };
-                broadcast(&state, &room_id, user_id, &msg).await;
+                broadcast(&state, user_id, &msg).await;
             }
             _ => {}
         }
     }
 
     forward.abort();
-    disconnect_user(&state, &room_id, user_id).await;
-    info!("user {user_id} left room '{room_id}'");
+    disconnect_user(&state, user_id).await;
+    info!("user {user_id} disconnected");
 }
 
-async fn handle_stroke_end(state: &SharedState, room_id: &str, user_id: UserId, parsed: ClientMsg) {
+async fn handle_stroke_end(state: &SharedState, user_id: UserId, parsed: ClientMsg) {
     let stored_data = parsed.data.as_ref().and_then(|d| {
         d.get("stroke")
             .filter(|v| !v.is_null())
@@ -255,15 +230,10 @@ async fn handle_stroke_end(state: &SharedState, room_id: &str, user_id: UserId, 
             .or(Some(d.clone()))
     });
 
-    let path = room::room_path(&state.data_dir, room_id);
-
     if let Some(mut stroke) = stored_data {
         ensure_id(&mut stroke, user_id);
-        let mut map = state.rooms.write().await;
-        if let Some(room) = map.get_mut(room_id) {
-            room.add_stroke(user_id, stroke);
-            room.save(&path).await;
-        }
+        let mut board = state.board.write().await;
+        board.add_stroke(user_id, stroke);
     }
 
     let msg = ServerMsg {
@@ -278,31 +248,18 @@ async fn handle_stroke_end(state: &SharedState, room_id: &str, user_id: UserId, 
         ids: None,
         owners: None,
     };
-    broadcast(state, room_id, user_id, &msg).await;
+    broadcast(state, user_id, &msg).await;
 }
 
-async fn handle_clear(state: &SharedState, room_id: &str) {
-    let path = room::room_path(&state.data_dir, room_id);
-    let mut map = state.rooms.write().await;
-    if let Some(room) = map.get_mut(room_id) {
-        room.clear_strokes();
-        room.save(&path).await;
-    }
+async fn handle_clear(state: &SharedState) {
+    let mut board = state.board.write().await;
+    board.clear_strokes();
 }
 
-async fn handle_erase(state: &SharedState, room_id: &str, user_id: UserId, parsed: ClientMsg) {
+async fn handle_erase(state: &SharedState, user_id: UserId, parsed: ClientMsg) {
     let owners = if let Some(ref ids) = parsed.ids {
-        let path = room::room_path(&state.data_dir, room_id);
-        let mut map = state.rooms.write().await;
-        if let Some(room) = map.get_mut(room_id) {
-            let owners = room.remove_strokes(ids, user_id);
-            if !owners.is_empty() {
-                room.save(&path).await;
-            }
-            owners
-        } else {
-            Vec::new()
-        }
+        let mut board = state.board.write().await;
+        board.remove_strokes(ids, user_id)
     } else {
         Vec::new()
     };
@@ -323,25 +280,13 @@ async fn handle_erase(state: &SharedState, room_id: &str, user_id: UserId, parse
             Some(owners)
         },
     };
-    broadcast(state, room_id, user_id, &msg).await;
+    broadcast(state, user_id, &msg).await;
 }
 
-async fn disconnect_user(state: &SharedState, room_id: &str, user_id: UserId) {
-    let path = room::room_path(&state.data_dir, room_id);
+async fn disconnect_user(state: &SharedState, user_id: UserId) {
     {
-        let mut map = state.rooms.write().await;
-        if let Some(room) = map.get_mut(room_id) {
-            room.users.remove(&user_id);
-            if room.users.is_empty() {
-                if room.dirty {
-                    room.save(&path).await;
-                }
-                map.remove(room_id);
-                info!("room '{room_id}' deleted (empty)");
-            } else if room.dirty {
-                room.save(&path).await;
-            }
-        }
+        let mut board = state.board.write().await;
+        board.users.remove(&user_id);
     }
 
     let leave_msg = ServerMsg {
@@ -356,10 +301,10 @@ async fn disconnect_user(state: &SharedState, room_id: &str, user_id: UserId) {
         ids: None,
         owners: None,
     };
-    broadcast(state, room_id, user_id, &leave_msg).await;
+    broadcast(state, user_id, &leave_msg).await;
 }
 
-async fn broadcast(state: &SharedState, room_id: &str, sender_id: UserId, msg: &ServerMsg) {
+async fn broadcast(state: &SharedState, sender_id: UserId, msg: &ServerMsg) {
     let text = match serde_json::to_string(msg) {
         Ok(t) => t,
         Err(e) => {
@@ -367,24 +312,22 @@ async fn broadcast(state: &SharedState, room_id: &str, sender_id: UserId, msg: &
             return;
         }
     };
-    let map = state.rooms.read().await;
-    if let Some(room) = map.get(room_id) {
-        for (&uid, user) in &room.users {
-            if uid == sender_id {
-                continue;
-            }
-            match user.tx.try_send(Message::Text(text.clone())) {
-                Ok(_) => {}
-                Err(TrySendError::Full(_)) => {
-                    if msg.msg_type != "cursor" {
-                        warn!(
-                            "dropping message for slow user {uid} (type={})",
-                            msg.msg_type
-                        );
-                    }
+    let board = state.board.read().await;
+    for (&uid, user) in &board.users {
+        if uid == sender_id {
+            continue;
+        }
+        match user.tx.try_send(Message::Text(text.clone())) {
+            Ok(_) => {}
+            Err(TrySendError::Full(_)) => {
+                if msg.msg_type != "cursor" {
+                    warn!(
+                        "dropping message for slow user {uid} (type={})",
+                        msg.msg_type
+                    );
                 }
-                Err(TrySendError::Closed(_)) => {}
             }
+            Err(TrySendError::Closed(_)) => {}
         }
     }
 }
@@ -402,22 +345,6 @@ fn ensure_id(stroke: &mut serde_json::Value, user_id: UserId) {
             );
             map.insert("id".to_string(), serde_json::Value::String(sid));
         }
-    }
-}
-
-fn assign_stroke_ids(room: &mut room::Room) {
-    let mut changed = false;
-    for (idx, stored) in room.strokes.iter_mut().enumerate() {
-        if let serde_json::Value::Object(ref mut map) = stored.data {
-            if !map.contains_key("id") {
-                let sid = format!("srv_{}_{}", stored.user_id, idx);
-                map.insert("id".to_string(), serde_json::Value::String(sid));
-                changed = true;
-            }
-        }
-    }
-    if changed {
-        room.dirty = true;
     }
 }
 

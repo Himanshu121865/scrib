@@ -13,13 +13,7 @@ impl WsClient {
         WsClient { ws: None }
     }
 
-    pub fn connect(
-        &mut self,
-        url: &str,
-        room: &str,
-        on_msg: &js_sys::Function,
-        on_status: &js_sys::Function,
-    ) {
+    pub fn connect(&mut self, url: &str, on_msg: &js_sys::Function, on_status: &js_sys::Function) {
         if self.ws.is_some() {
             return;
         }
@@ -36,10 +30,8 @@ impl WsClient {
         };
 
         let ws_for_open = ws.clone();
-        let room_owned = room.to_string();
         let on_open = Closure::wrap(Box::new(move || {
-            let join = format!(r#"{{"type":"join","room":"{}"}}"#, room_owned);
-            let _ = ws_for_open.send_with_str(&join);
+            let _ = ws_for_open.send_with_str(r#"{"type":"join"}"#);
         }) as Box<dyn FnMut()>);
         ws.set_onopen(Some(on_open.as_ref().unchecked_ref()));
         on_open.forget();
@@ -60,9 +52,8 @@ impl WsClient {
         ws.set_onclose(Some(on_close.as_ref().unchecked_ref()));
         on_close.forget();
 
-        let on_error = Closure::wrap(Box::new(move |_: Event| {
-            // WebSocket errors are usually followed by onclose
-        }) as Box<dyn FnMut(web_sys::Event)>);
+        let on_error =
+            Closure::wrap(Box::new(move |_: Event| {}) as Box<dyn FnMut(web_sys::Event)>);
         ws.set_onerror(Some(on_error.as_ref().unchecked_ref()));
         on_error.forget();
 

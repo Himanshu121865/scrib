@@ -27,7 +27,7 @@ function onWSMessage(text) {
 }
 
 function onWSStatus(text) {
-  document.getElementById('bottomInfo').textContent = `Room: ${S.roomId} · ${text}`;
+  document.getElementById('bottomInfo').textContent = text;
   if (text === 'disconnected') updateUserCount();
 }
 
@@ -85,15 +85,13 @@ function onWSCursor(msg) {
 }
 
 export function initWS() {
-  S.roomId = location.hash.slice(1) || Math.random().toString(36).slice(2, 7);
-  location.hash = S.roomId;
   const url = `ws://${location.hostname}:9876`;
-  document.getElementById('bottomInfo').textContent = `Room: ${S.roomId} · starting...`;
-  client.connect(url, S.roomId, onWSMessage, onWSStatus);
+  document.getElementById('bottomInfo').textContent = 'connecting...';
+  client.connect(url, onWSMessage, onWSStatus);
 }
 
 function updateUserCount() {
-  document.getElementById('bottomInfo').textContent = `Room: ${S.roomId} · ${Object.keys(S.remoteCursors).length + 1} online`;
+  document.getElementById('bottomInfo').textContent = `${Object.keys(S.remoteCursors).length + 1} online`;
 }
 
 export function sendCursor(x, y) {

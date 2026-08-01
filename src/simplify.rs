@@ -160,8 +160,6 @@ mod tests {
 
     #[test]
     fn epsilon_zero_many_points() {
-        // fp imprecision causes tiny non-zero distances on large colinear sets;
-        // the iterative version matches the recursive version's output
         let points: Vec<Point> = (0..2000)
             .map(|i| Point::new(i as f64, (i % 3) as f64, 0.5))
             .collect();

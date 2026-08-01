@@ -11,7 +11,7 @@ make serve      # HTTP server only (terminal 1)
 make server     # WebSocket server only (terminal 2)
 ```
 
-Open **http://localhost:8080** in a browser. Append `#roomname` to the URL for multiplayer.
+Open **http://localhost:8080** in a browser. Everyone connected to the server shares one canvas.
 
 ## Commands
 

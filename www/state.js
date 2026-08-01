@@ -55,7 +55,6 @@ export const S = {
 
   myId: -1,
   myColor: '#e86a20',
-  roomId: '',
   remoteCursors: {},
   cursorThrottle: 0,
   currentStrokeId: null,

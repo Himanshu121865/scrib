@@ -236,9 +236,6 @@ mod tests {
 
     #[test]
     fn short_stroke_taper_no_double_apply() {
-        // n=4 with old code: taper=(4/12).clamp(3,8)=3, fwd=[0,1,2] rev=[3,2,1]
-        // points 1,2 double-tapered: widths[1] < widths[0] (broken)
-        // With fix: taper=min(3,2)=2, fwd=[0,1] rev=[3,2] — no overlap
         let pts: Vec<Point> = (0..4).map(|_| Point::new(0.0, 0.0, 1.0)).collect();
         let widths = compute_widths(&pts, 10.0, 0.75);
         assert_eq!(widths.len(), 4);
@@ -254,7 +251,6 @@ mod tests {
         assert!((widths[0] / widths[widths.len() - 1] - 1.0).abs() < 0.01);
         assert!((widths[1] / widths[widths.len() - 2] - 1.0).abs() < 0.01);
         assert!((widths[2] / widths[widths.len() - 3] - 1.0).abs() < 0.01);
-        // middle should be untapered and equal
         assert!((widths[3] - widths[4]).abs() < 0.01);
     }
 

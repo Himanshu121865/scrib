@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -7,10 +6,8 @@ use tokio::sync::{mpsc, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 
 pub type UserId = usize;
-pub type RoomId = String;
 
-pub const MAX_STROKES_PER_ROOM: usize = 500;
-pub const MAX_ROOM_ID_LEN: usize = 64;
+pub const MAX_STROKES: usize = 500;
 pub const MAX_MSG_BYTES: usize = 256 * 1024;
 pub const MSG_RATE_WINDOW: u32 = 120;
 pub const MSG_CHANNEL_CAP: usize = 128;
@@ -24,20 +21,18 @@ pub struct User {
     pub color: String,
 }
 
-pub struct Room {
+pub struct Board {
     pub users: HashMap<UserId, User>,
     pub next_id: UserId,
     pub strokes: Vec<StoredStroke>,
-    pub dirty: bool,
 }
 
-impl Room {
+impl Board {
     pub fn new() -> Self {
-        Room {
+        Board {
             users: HashMap::new(),
             next_id: 0,
             strokes: Vec::with_capacity(64),
-            dirty: false,
         }
     }
 
@@ -56,16 +51,14 @@ impl Room {
     }
 
     pub fn add_stroke(&mut self, user_id: UserId, data: serde_json::Value) {
-        if self.strokes.len() >= MAX_STROKES_PER_ROOM {
+        if self.strokes.len() >= MAX_STROKES {
             self.strokes.remove(0);
         }
         self.strokes.push(StoredStroke { user_id, data });
-        self.dirty = true;
     }
 
     pub fn clear_strokes(&mut self) {
         self.strokes.clear();
-        self.dirty = true;
     }
 
     pub fn remove_strokes(&mut self, ids: &[String], user_id: UserId) -> Vec<UserId> {
@@ -78,9 +71,6 @@ impl Room {
             }
             !matched
         });
-        if !owners.is_empty() {
-            self.dirty = true;
-        }
         owners
     }
 
@@ -103,48 +93,11 @@ impl Room {
             })
             .collect()
     }
+}
 
-    pub async fn save(&mut self, path: &Path) {
-        if !self.dirty {
-            return;
-        }
-        let data = RoomData {
-            next_id: self.next_id,
-            strokes: self.strokes.clone(),
-        };
-        let json = match serde_json::to_string(&data) {
-            Ok(j) => j,
-            Err(e) => {
-                tracing::warn!("failed to serialize room data: {e}");
-                return;
-            }
-        };
-        let tmp = path.with_extension("json.tmp");
-        match tokio::fs::write(&tmp, &json).await {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!("failed to write temp file: {e}");
-                return;
-            }
-        }
-        match tokio::fs::rename(&tmp, path).await {
-            Ok(_) => self.dirty = false,
-            Err(e) => {
-                tracing::warn!("failed to rename temp file: {e}");
-            }
-        }
-    }
-
-    pub fn load(path: &Path) -> std::io::Result<Self> {
-        let json = std::fs::read_to_string(path)?;
-        let data: RoomData = serde_json::from_str(&json)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        Ok(Room {
-            users: HashMap::new(),
-            next_id: data.next_id,
-            strokes: data.strokes,
-            dirty: false,
-        })
+impl Default for Board {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -166,34 +119,12 @@ pub struct UserInfo {
     pub color: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct RoomData {
-    next_id: UserId,
-    strokes: Vec<StoredStroke>,
-}
-
-pub type RoomMap = HashMap<RoomId, Room>;
-pub type Rooms = Arc<RwLock<RoomMap>>;
-
 pub struct AppState {
-    pub rooms: Rooms,
-    pub data_dir: PathBuf,
+    pub board: Arc<RwLock<Board>>,
     pub max_users: usize,
 }
 
 pub type SharedState = Arc<AppState>;
-
-pub fn validate_room_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= MAX_ROOM_ID_LEN
-        && id
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
-}
-
-pub fn room_path(data_dir: &Path, room_id: &str) -> PathBuf {
-    data_dir.join(format!("{room_id}.json"))
-}
 
 #[derive(Serialize)]
 pub struct ServerMsg {
