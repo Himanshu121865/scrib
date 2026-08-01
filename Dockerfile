@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib
 WORKDIR /app
 COPY . .
 RUN rustup target add wasm32-unknown-unknown
-RUN wasm-pack build --target web --features wasm && cp pkg/* www/pkg/
+RUN wasm-pack build --target web --features wasm && mkdir -p www/pkg && cp pkg/* www/pkg/
 RUN cargo build --release -p scrib-server
 
 FROM debian:bookworm-slim
